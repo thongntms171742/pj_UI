@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Thrift It!",
+    "slug": "thriftit-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF0E6"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.thriftit.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FAF0E6"
+      },
+      "package": "com.thriftit.mobile",
+      "versionCode": 1,
+      "permissions": [
+        "INTERNET"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "extra": {
+      "apiUrl": "https://thriftit-backend.onrender.com",
+      "eas": {
+        "projectId": "ab5681ed-8fc3-4c56-b1af-58f822d0fa34"
+      }
+    }
+  }
+}
