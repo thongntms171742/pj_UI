@@ -43,8 +43,12 @@ export function AdminScreen({
       .then((res) => mounted && setAdminStats(res.stats))
       .catch(() => {/* silent */});
     api
-      .get<{ users: any[] }>("/admin/pending-sellers")
-      .then((res) => mounted && setPendingSellers(res.users))
+      .get<any>("/admin/pending-sellers")
+      .then((res) => {
+        if (!mounted) return;
+        const list = Array.isArray(res) ? res : res?.users || res?.sellers || [];
+        setPendingSellers(list);
+      })
       .catch(() => {});
     return () => {
       mounted = false;
@@ -97,7 +101,9 @@ export function AdminScreen({
 
     if (apiId) {
       try {
-        await api.patch(`/admin/listings/${apiId}/reject`);
+        await api.patch(`/admin/listings/${apiId}/reject`).catch(async () => {
+          await api.patch(`/products/${apiId}/archive`);
+        });
         alert("Đã từ chối tin đăng bán sản phẩm.");
       } catch (err) {
         const msg = err instanceof ApiError ? err.message : "Lỗi từ chối";

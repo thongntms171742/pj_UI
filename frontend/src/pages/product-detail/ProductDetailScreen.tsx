@@ -24,6 +24,9 @@ export function ProductDetailScreen({
   const [qty, setQty] = useState(1);
   const [addedToCart, setAddedToCart] = useState(false);
 
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+
   // Fetch seller profile from API
   useEffect(() => {
     if (!product.seller) return;
@@ -40,6 +43,29 @@ export function ProductDetailScreen({
       mounted = false;
     };
   }, [product.seller]);
+
+  // Fetch product reviews from OpenAPI /api/products/{productId}/reviews
+  useEffect(() => {
+    const pid = product.apiId || product.id;
+    if (!pid) return;
+    let mounted = true;
+    setReviewsLoading(true);
+    api
+      .get<{ reviews: any[] }>(`/products/${pid}/reviews`)
+      .then((res) => {
+        if (mounted) {
+          const list = Array.isArray(res.reviews) ? res.reviews : [];
+          setReviews(list);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (mounted) setReviewsLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [product.apiId, product.id]);
 
   const condLabel = product.condition >= 95 ? "Như mới" : product.condition >= 85 ? "Rất tốt" : product.condition >= 70 ? "Tốt" : "Khá";
 
@@ -241,6 +267,68 @@ export function ProductDetailScreen({
               ))}
             </div>
           </div>
+        </div>
+
+        {/* ── Product Reviews Section (OpenAPI /api/products/{id}/reviews) ── */}
+        <div className="mt-16 pt-10 border-t" style={{ borderColor: MUTED }}>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-2xl font-bold" style={{ ...serif, color: ESPRESSO }}>
+                Đánh giá từ người mua ({reviews.length})
+              </h3>
+              <p className="text-sm mt-1" style={{ color: COFFEE }}>
+                Nhận xét thực tế từ người dùng đã mua sản phẩm này
+              </p>
+            </div>
+            {reviews.length > 0 && (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
+                <Star size={18} fill={T} stroke="none" />
+                <span className="font-bold text-lg" style={{ color: T }}>
+                  {(reviews.reduce((acc, r) => acc + (r.rating || 5), 0) / reviews.length).toFixed(1)}
+                </span>
+                <span className="text-xs" style={{ color: COFFEE }}>/ 5.0</span>
+              </div>
+            )}
+          </div>
+
+          {reviewsLoading ? (
+            <div className="py-8 text-center text-sm" style={{ color: COFFEE }}>
+              Đang tải đánh giá...
+            </div>
+          ) : reviews.length === 0 ? (
+            <div className="p-8 rounded-2xl text-center" style={{ backgroundColor: CARD, border: `1px dashed ${MUTED}`, color: COFFEE }}>
+              <p className="text-base font-semibold mb-1" style={{ color: ESPRESSO }}>Chưa có đánh giá nào</p>
+              <p className="text-xs">Hãy là người đầu tiên trải nghiệm và để lại đánh giá cho sản phẩm này sau khi mua!</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {reviews.map((r, idx) => (
+                <div key={r._id || idx} className="p-5 rounded-2xl" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm" style={{ backgroundColor: SOFT, color: ESPRESSO }}>
+                        {(r.userName || r.userId?.name || "Khách")?.[0]?.toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold" style={{ color: ESPRESSO }}>{r.userName || r.userId?.name || "Người mua ẩn danh"}</p>
+                        <p className="text-[11px]" style={{ color: COFFEE }}>
+                          {r.createdAt ? new Date(r.createdAt).toLocaleDateString("vi-VN") : "Gần đây"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex text-amber-500">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star key={star} size={14} fill={star <= (r.rating || 5) ? T : "none"} stroke={T} />
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-sm leading-relaxed" style={{ color: COFFEE }}>
+                    {r.comment || "Sản phẩm đúng như mô tả, đóng gói cẩn thận."}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

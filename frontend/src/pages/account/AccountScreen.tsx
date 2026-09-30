@@ -277,6 +277,18 @@ export function AccountScreen({
     }
   };
 
+  const handleArchiveProduct = async (product: SellerProduct) => {
+    if (!confirm(`Bạn có chắc muốn lưu trữ/xóa sản phẩm "${product.name}" không?`)) return;
+    const targetId = product.apiId || String(product.id);
+    try {
+      await api.patch(`/products/${targetId}/archive`);
+      setMyProducts((prev) => prev.filter((p) => p.id !== product.id));
+      showToast?.(`✓ Đã lưu trữ sản phẩm "${product.name}"`);
+    } catch (err: any) {
+      showToast?.(`⚠️ ${err.message || "Lỗi lưu trữ sản phẩm"}`);
+    }
+  };
+
   // ── Shipping shipments (fetched per order when order tab = shipping) ──
   const [shipments, setShipments] = useState<Record<string, Shipment>>({});
   const [shipmentsLoading, setShipmentsLoading] = useState(false);
@@ -503,14 +515,16 @@ export function AccountScreen({
             onClick={async () => {
               setIsSubmittingReview(true);
               try {
-                // Workaround for backend strict status requirement:
-                // We update it to COMPLETED first so the backend allows the review
-                await api.patch(`/orders/${reviewOrder.apiId || reviewOrder.id}/status`, { status: "COMPLETED" });
+                // Ensure order status is COMPLETED per OpenAPI state transition
+                if (reviewOrder.status !== "COMPLETED") {
+                  await api.patch(`/orders/${reviewOrder.id || reviewOrder.apiId}/status`, { status: "COMPLETED" }).catch(() => {});
+                }
                 
-                await api.post(`/products/${reviewOrder.items[0].id}/reviews`, {
+                const productId = reviewOrder.items[0]?.productApiId || reviewOrder.items[0]?.apiId || reviewOrder.items[0]?.id;
+                await api.post(`/products/${productId}/reviews`, {
                   rating: reviewRating,
                   comment: reviewComment || "Đã nhận hàng",
-                  orderId: reviewOrder.apiId || reviewOrder.id,
+                  orderId: reviewOrder.id || reviewOrder.apiId,
                 });
                 onUpdateOrderStatus && onUpdateOrderStatus(reviewOrder.id, "COMPLETED", true);
                 setReviewOrder(null);
@@ -1142,8 +1156,8 @@ export function AccountScreen({
                         </div>
                       </div>
                       <div className="flex gap-2 flex-shrink-0">
-                        <button className="px-3 py-1.5 text-xs rounded-xl border font-semibold transition-all hover:opacity-80" style={{ borderColor: MUTED, color: COFFEE, ...ff }}>Sửa</button>
-                        <button className="px-3 py-1.5 text-xs rounded-xl font-semibold transition-all hover:opacity-80" style={{ backgroundColor: "#FDEDEC", color: "#E74C3C", ...ff }}>Xóa</button>
+                        <button onClick={() => go("post")} className="px-3 py-1.5 text-xs rounded-xl border font-semibold transition-all hover:opacity-80" style={{ borderColor: MUTED, color: COFFEE, ...ff }}>Sửa</button>
+                        <button onClick={() => handleArchiveProduct(product)} className="px-3 py-1.5 text-xs rounded-xl font-semibold transition-all hover:opacity-80" style={{ backgroundColor: "#FDEDEC", color: "#E74C3C", ...ff }}>Xóa</button>
                       </div>
                     </div>
                   );
@@ -1233,6 +1247,7 @@ export function AccountScreen({
                   </div>
                 ))}
               </div>
+            )}
 
               {userRole === "seller" && (
                 <>
