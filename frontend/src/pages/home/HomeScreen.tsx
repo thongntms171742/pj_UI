@@ -71,12 +71,12 @@ export function HomeScreen({ go, products, onLike, onAddToCart, loading, sellerS
   }, []);
 
   const productGrid = (
-    <div className="grid grid-cols-5 gap-5">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-5">
       {loading
         ? Array.from({ length: 10 }).map((_, i) => <ProductSkeleton key={i} />)
         : products.length === 0
           ? (
-            <div className="col-span-5 py-16 text-center" style={{ color: COFFEE, ...ff }}>
+            <div className="col-span-full py-16 text-center" style={{ color: COFFEE, ...ff }}>
               Chưa có sản phẩm nào. Hãy là người đầu tiên đăng bán!
             </div>
           )
@@ -89,7 +89,7 @@ export function HomeScreen({ go, products, onLike, onAddToCart, loading, sellerS
   return (
     <div style={{ backgroundColor: LINEN }}>
       {/* Hero banner */}
-      <div className="relative w-full overflow-hidden" style={{ height: "280px" }}>
+      <div className="relative w-full overflow-hidden h-[280px] md:h-[400px]">
         <img
           src="https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=1440&h=400&fit=crop&auto=format"
           alt="Vintage collection"
@@ -99,25 +99,25 @@ export function HomeScreen({ go, products, onLike, onAddToCart, loading, sellerS
           className="absolute inset-0 flex items-center"
           style={{
             background:
-              "linear-gradient(90deg, rgba(58,35,18,0.8) 0%, rgba(58,35,18,0.3) 60%, transparent 100%)",
+              "linear-gradient(90deg, rgba(58,35,18,0.85) 0%, rgba(58,35,18,0.4) 60%, transparent 100%)",
           }}
         >
-          <div className="max-w-[1440px] mx-auto w-full px-8">
-            <p className="text-sm font-bold mb-2 uppercase tracking-widest" style={{ color: T, ...ff }}>
+          <div className="max-w-[1440px] mx-auto w-full px-4 md:px-8">
+            <p className="hidden md:block text-sm font-bold mb-2 uppercase tracking-widest" style={{ color: T, ...ff }}>
               ✦ Bộ sưu tập mới tuần này
             </p>
-            <h2 className="text-5xl font-bold leading-tight mb-4" style={{ ...serif, color: LINEN }}>
+            <h2 className="text-[32px] md:text-5xl font-bold leading-[1.15] mb-2 md:mb-4" style={{ ...serif, color: LINEN }}>
               Mặc vintage,
               <br />
               sống có tâm 🌿
             </h2>
-            <p className="text-base mb-6" style={{ color: MUTED, ...ff }}>
-              Mua và bán đồ cũ — góp phần giảm thiểu lãng phí thời trang
+            <p className="text-sm md:text-base mb-5 md:mb-6 max-w-[280px] md:max-w-none opacity-90" style={{ color: LINEN, ...ff }}>
+              Mua và bán đồ cũ — góp phần giảm thiểu rác thải thời trang
             </p>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 md:gap-4">
               <button
                 onClick={() => go("search")}
-                className="px-6 py-3 rounded-xl font-bold text-sm transition-all hover:opacity-90 shadow-lg"
+                className="px-6 md:px-8 py-2.5 md:py-3.5 rounded-xl font-bold text-sm md:text-base transition-all hover:opacity-90 shadow-lg w-full sm:w-auto text-center"
                 style={{ backgroundColor: T, color: LINEN, ...ff }}
               >
                 Khám phá ngay
@@ -128,8 +128,8 @@ export function HomeScreen({ go, products, onLike, onAddToCart, loading, sellerS
                   else if (sellerStatus === "PENDING") go("seller-apply");
                   else go("seller-apply");
                 }}
-                className="px-6 py-3 rounded-xl font-bold text-sm border-2 transition-all hover:bg-white/10"
-                style={{ border: `2px solid ${LINEN}`, color: LINEN, ...ff }}
+                className="px-2 py-2 text-sm font-semibold hover:underline w-full sm:w-auto text-center sm:text-left"
+                style={{ color: LINEN, ...ff }}
               >
                 {sellerStatus === "APPROVED" ? "🏪 Kênh người bán"
                   : sellerStatus === "PENDING" ? "🕐 Đang chờ duyệt"
@@ -141,7 +141,7 @@ export function HomeScreen({ go, products, onLike, onAddToCart, loading, sellerS
         </div>
       </div>
 
-      <div className="max-w-[1440px] mx-auto px-8 py-12">
+      <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8 md:py-12">
         {/* New Listings */}
         <div className="mb-12">
           <div className="flex items-center justify-between mb-6">
@@ -201,12 +201,12 @@ export function HomeScreen({ go, products, onLike, onAddToCart, loading, sellerS
               Xem tất cả <ChevronRight size={15} />
             </button>
           </div>
-          <div className="grid grid-cols-4 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
             {sellersLoading
               ? Array.from({ length: 4 }).map((_, i) => <SellerSkeleton key={i} />)
               : sellers.length === 0
                 ? (
-                  <div className="col-span-4 py-12 text-center" style={{ color: COFFEE, ...ff }}>
+                  <div className="col-span-full py-12 text-center" style={{ color: COFFEE, ...ff }}>
                     Chưa có shop nào.
                   </div>
                 )

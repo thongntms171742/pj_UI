@@ -56,11 +56,11 @@ export function ChatScreen() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: LINEN }}>
       <div className="max-w-[1440px] mx-auto px-8 py-6">
-        <h1 className="text-2xl font-bold mb-4" style={{ ...serif, color: ESPRESSO }}>Tin nhắn</h1>
+        <h1 className="text-2xl font-bold mb-4" style={{ ...serif, color: ESPRESSO }}>Tin nhắn <span className="text-xs font-mono px-2 py-0.5 rounded bg-amber-100 text-amber-700 ml-2 align-middle">PREVIEW</span></h1>
         <div className="mb-3 px-4 py-2 rounded-xl text-xs flex items-center gap-2"
           style={{ backgroundColor: `${T}15`, border: `1px dashed ${T}55`, color: ESPRESSO, ...ff }}>
           <span>💬</span>
-          <span>Đây là bản demo UI chat. Tính năng nhắn tin thời gian thực sẽ được kết nối backend ở phase sau.</span>
+          <span>Tính năng nhắn tin giữa người mua và người bán đang được hoàn thiện. Dự kiến ra mắt trong phiên bản tiếp theo.</span>
         </div>
         <div className="rounded-2xl overflow-hidden shadow-sm flex" style={{ height: "calc(100vh - 240px)", border: `1px solid ${MUTED}` }}>
           {/* Contact list */}

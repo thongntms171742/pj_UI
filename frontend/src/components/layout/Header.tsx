@@ -33,24 +33,17 @@ export function Header({
 
   return (
     <header className="sticky top-0 z-50 w-full shadow-sm" style={{ backgroundColor: COFFEE }}>
-      <div className="max-w-[1440px] mx-auto px-8 flex items-center gap-6 h-14">
+      <div className="max-w-[1440px] mx-auto px-4 md:px-8 flex flex-wrap md:flex-nowrap items-center justify-between gap-4 md:gap-6 py-3 md:py-0 md:h-14">
         {/* Logo */}
         <button onClick={() => go("home")} className="flex items-center gap-3 flex-shrink-0 group">
-          <ThriftLogo size={38} />
-          <span className="text-xl font-bold italic" style={{ ...ff, color: LINEN, letterSpacing: "-0.3px" }}>
+          <ThriftLogo size={32} />
+          <span className="text-lg md:text-xl font-bold italic" style={{ ...ff, color: LINEN, letterSpacing: "-0.3px" }}>
             thrift it!
           </span>
         </button>
 
-        {/* Navigation links */}
-        <div className="flex items-center gap-4 ml-2">
-          <button
-            onClick={() => go("pricing")}
-            className="text-xs font-semibold hover:opacity-85 transition-all flex items-center gap-1.5 text-amber-400"
-            style={ff}
-          >
-            <Sparkles size={13} /> Gói dịch vụ
-          </button>
+        {/* Navigation links - Hidden on small mobile */}
+        <div className="hidden md:flex items-center gap-4 ml-2">
           {(isAdmin || currentUserEmail === "admin@thriftit.vn") && (
             <button
               onClick={() => go("admin")}
@@ -63,7 +56,7 @@ export function Header({
         </div>
 
         {/* Search bar */}
-        <div className="flex-1 max-w-2xl mx-4">
+        <div className="w-full md:flex-1 max-w-2xl mx-0 md:mx-4 order-3 md:order-none hidden sm:block">
           <div
             className="flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all"
             style={{ backgroundColor: "rgba(250,240,230,0.15)", border: "1.5px solid rgba(250,240,230,0.25)" }}
@@ -87,13 +80,13 @@ export function Header({
               style={{ backgroundColor: T, color: LINEN, ...ff }}
             >
               <Search size={13} />
-              Tìm
+              <span className="hidden sm:inline">Tìm</span>
             </button>
           </div>
         </div>
 
         {/* Nav icons */}
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
           {[
             { id: "cart" as Screen, icon: ShoppingCart, label: "Giỏ hàng", badge: cartCount },
             { id: "chat" as Screen, icon: MessageCircle, label: "Tin nhắn", badge: 0 },
@@ -103,7 +96,7 @@ export function Header({
             <button
               key={id}
               onClick={() => go(id)}
-              className="relative flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl transition-all hover:bg-white/10"
+              className="relative flex flex-col items-center gap-0.5 px-2.5 sm:px-4 py-2 rounded-xl transition-all hover:bg-white/10"
               style={{ color: screen === id ? T : "rgba(250,240,230,0.85)" }}
             >
               <div className="relative">
@@ -117,7 +110,7 @@ export function Header({
                   </span>
                 )}
               </div>
-              <span className="text-[10px] font-medium" style={ff}>
+              <span className="hidden sm:block text-[10px] font-medium" style={ff}>
                 {label}
               </span>
             </button>
@@ -125,12 +118,40 @@ export function Header({
         </div>
       </div>
 
+      {/* Mobile Search Bar */}
+      <div className="sm:hidden px-4 pb-4">
+        <div
+          className="flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all"
+          style={{ backgroundColor: "rgba(250,240,230,0.15)", border: "1.5px solid rgba(250,240,230,0.25)" }}
+        >
+          <Sparkles size={17} style={{ color: T, flexShrink: 0 }} />
+          <input
+            value={headerQuery}
+            onChange={(e) => setHeaderQuery?.(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") go("search");
+            }}
+            placeholder="Tìm sản phẩm..."
+            className="flex-1 bg-transparent text-sm outline-none"
+            style={{ ...ff, color: "rgba(250,240,230,0.95)" }}
+          />
+          <button
+            onClick={() => go("search")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+            style={{ backgroundColor: T, color: LINEN, ...ff }}
+          >
+            <Search size={13} />
+            <span className="hidden sm:inline">Tìm</span>
+          </button>
+        </div>
+      </div>
+
       {/* Filter tags sub-row */}
       {showTags && (
         <div style={{ backgroundColor: "rgba(0,0,0,0.18)", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <div className="max-w-[1440px] mx-auto px-8 flex items-center gap-2 py-2.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          <div className="max-w-[1440px] mx-auto px-4 md:px-8 flex items-center gap-2 py-2.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
             <SlidersHorizontal size={14} style={{ color: MUTED, flexShrink: 0 }} />
-            <span className="text-xs font-semibold mr-1" style={{ color: MUTED, ...ff, flexShrink: 0 }}>
+            <span className="hidden md:inline text-xs font-semibold mr-1" style={{ color: MUTED, ...ff, flexShrink: 0 }}>
               Bộ lọc nhanh:
             </span>
             {FILTER_TAGS.map((tag) => (

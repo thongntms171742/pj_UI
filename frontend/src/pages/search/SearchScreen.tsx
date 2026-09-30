@@ -4,6 +4,8 @@ import { ProductCard } from "../../components/product/ProductCard";
 import { FilterSidebar } from "../../components/product/FilterSidebar";
 import { T, MUTED, COFFEE, LINEN, CARD, ESPRESSO, SOFT, ff, serif } from "../../lib/theme";
 import type { FilterState, Product, Screen } from "../../types";
+import { api } from "../../lib/api";
+import { adaptProduct } from "../../lib/adapters";
 
 interface SearchScreenProps {
   products: Product[];
@@ -53,13 +55,50 @@ export function SearchScreen({
     }
   }, [activeTag]);
 
-  const filteredProducts = products.filter((p) => {
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiProducts, setAiProducts] = useState<Product[] | null>(null);
+
+  useEffect(() => {
+    if (!filters.ai || !query.trim()) {
+      setAiProducts(null);
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(async () => {
+      setAiLoading(true);
+      try {
+        const res = await api.post<{ products: any[] }>("/ai/search", { query });
+        if (!active) return;
+        if (Array.isArray(res.products) && res.products.length > 0) {
+          const likedIds = new Set(products.filter((p) => p.liked).map((p) => String(p.id)));
+          setAiProducts(res.products.map((p) => adaptProduct(p, likedIds)));
+        } else {
+          setAiProducts(null);
+        }
+      } catch {
+        if (active) setAiProducts(null);
+      } finally {
+        if (active) setAiLoading(false);
+      }
+    }, 600);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [filters.ai, query, products]);
+
+  const baseProducts = filters.ai && aiProducts && aiProducts.length > 0 ? aiProducts : products;
+
+  const filteredProducts = baseProducts.filter((p) => {
     const q = query.toLowerCase();
     const matchesQuery =
-      !q ||
-      p.name.toLowerCase().includes(q) ||
-      p.category.toLowerCase().includes(q) ||
-      p.seller.toLowerCase().includes(q);
+      filters.ai && aiProducts && aiProducts.length > 0
+        ? true
+        : !q ||
+          p.name.toLowerCase().includes(q) ||
+          p.category.toLowerCase().includes(q) ||
+          p.seller.toLowerCase().includes(q);
     const matchesCat = filters.cats.length === 0 || filters.cats.includes(p.category);
     const matchesSize = filters.sizes.length === 0 || filters.sizes.includes(p.size);
     const matchesCond = p.condition >= filters.cond;
@@ -86,7 +125,7 @@ export function SearchScreen({
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: LINEN }}>
-      <div className="max-w-[1440px] mx-auto px-8 py-8">
+      <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8">
         <div className="mb-6">
           <div
             className="flex items-center gap-3 px-4 py-3 rounded-xl"
@@ -108,7 +147,27 @@ export function SearchScreen({
           </div>
         </div>
 
-        <div className="flex items-center justify-between mb-6">
+        {filters.ai && (
+          <div
+            className="mb-6 px-4 py-3 rounded-2xl flex items-center gap-2.5 text-xs font-semibold"
+            style={{
+              backgroundColor: T + "15",
+              color: ESPRESSO,
+              border: `1px solid ${T}33`,
+            }}
+          >
+            <Sparkles size={16} style={{ color: T }} />
+            <span>
+              {aiLoading
+                ? "AI đang tìm kiếm và đối sánh ngữ nghĩa sản phẩm..."
+                : aiProducts && aiProducts.length > 0
+                ? `✨ Đã tìm thấy ${aiProducts.length} sản phẩm phù hợp qua AI Smart Search`
+                : "Tính năng Tìm kiếm AI đang bật. Bạn có thể gõ câu mô tả tự nhiên (VD: 'áo dạ retro cho mùa thu')."}
+            </span>
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-0 mb-6">
           <div>
             <h2 className="text-xl font-bold" style={{ ...serif, color: ESPRESSO }}>
               {query ? (
@@ -155,7 +214,7 @@ export function SearchScreen({
           </div>
         </div>
 
-        <div className="flex gap-7">
+        <div className="flex flex-col lg:flex-row gap-7">
           <FilterSidebar filters={filters} onChange={setFilters} />
           <div className="flex-1">
             {!filters.ai && (
@@ -171,7 +230,7 @@ export function SearchScreen({
               </div>
             )}
 
-            <div className="grid grid-cols-4 gap-5">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-5">
               {sortedProducts.map((p) => (
                 <ProductCard key={p.id} product={p} onLike={onLike} go={go} onAddToCart={onAddToCart} />
               ))}

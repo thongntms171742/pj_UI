@@ -52,11 +52,11 @@ export function ProductCard({ product, onLike, go }: ProductCardProps) {
         <p className="text-base font-bold" style={{ ...serif, color: T }}>
           {fmt(product.price)}
         </p>
-        <div className="flex items-center gap-2 mt-1">
-          <span className="text-xs font-semibold flex items-center gap-1" style={{ color: condColor, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+        <div className="flex flex-wrap items-center gap-2 mt-1">
+          <span className="text-[10px] md:text-xs font-semibold flex items-center gap-1" style={{ color: condColor, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
             ✓ {product.condition}% Mới
           </span>
-          <span className="text-xs" style={{ color: COFFEE, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+          <span className="text-[10px] md:text-xs truncate max-w-full" style={{ color: COFFEE, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
             • {product.sellerName ? `Shop: ${product.sellerName}` : `@${product.seller}`}
           </span>
         </div>

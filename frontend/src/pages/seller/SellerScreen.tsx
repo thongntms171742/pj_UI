@@ -12,10 +12,10 @@ export function SellerScreen({ seller, go, products, onAddToCart }: { seller: Se
   const [reviews, setReviews] = useState<any[]>([]);
 
   useEffect(() => {
-    api.get<{ reviews: any[] }>(`/sellers/${seller.id}/reviews`)
+    api.get<{ reviews: any[] }>(`/sellers/${seller.handle}/reviews`)
       .then((res) => setReviews(res.reviews || []))
       .catch(() => {});
-  }, [seller.id]);
+  }, [seller.handle]);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: LINEN }}>
@@ -30,13 +30,17 @@ export function SellerScreen({ seller, go, products, onAddToCart }: { seller: Se
               <div className="flex items-center gap-6 mt-4">
                 <div className="flex items-center gap-1.5">
                   <div className="flex">
-                    {[1,2,3,4,5].map(i => <Star key={i} size={16} fill={T} stroke="none" />)}
+                    {[1,2,3,4,5].map(i => <Star key={i} size={16} fill={i <= Math.round(seller.rating) ? T : "none"} stroke={i <= Math.round(seller.rating) ? "none" : MUTED} />)}
                   </div>
-                  <span className="text-lg font-bold" style={{ color: T }}>{seller.rating}</span>
-                  <span className="text-sm" style={{ color: MUTED }}>({seller.transactions} đánh giá)</span>
+                  <span className="text-lg font-bold" style={{ color: T }}>{seller.rating.toFixed(1)}</span>
+                  <span className="text-sm" style={{ color: MUTED }}>({seller.transactions} giao dịch)</span>
                 </div>
                 <div className="h-8 w-px" style={{ backgroundColor: MUTED + "44" }} />
-                <span className="text-sm px-3 py-1 rounded-full" style={{ backgroundColor: T + "33", color: T, ...ff }}>Shop uy tín ✓</span>
+                {seller.rating >= 4.0 && seller.transactions >= 20 ? (
+                  <span className="text-sm px-3 py-1 rounded-full" style={{ backgroundColor: T + "33", color: T, ...ff }}>Shop uy tín ✓</span>
+                ) : (
+                  <span className="text-sm px-3 py-1 rounded-full" style={{ backgroundColor: MUTED + "22", color: COFFEE, ...ff }}>Shop mới</span>
+                )}
               </div>
             </div>
             <div className="flex gap-3">

@@ -37,7 +37,7 @@ export function FilterSidebar({ filters, onChange }: FilterSidebarProps) {
 
   return (
     <aside
-      className="w-60 flex-shrink-0 rounded-2xl overflow-hidden shadow-sm"
+      className="w-full lg:w-60 flex-shrink-0 rounded-2xl overflow-hidden shadow-sm"
       style={{
         backgroundColor: CARD,
         border: `1px solid ${MUTED}`,

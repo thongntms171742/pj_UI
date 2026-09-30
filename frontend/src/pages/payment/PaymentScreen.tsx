@@ -1,61 +1,19 @@
-import React, { useState, useRef } from "react";
-import { CheckCircle, Check, Shield } from "lucide-react";
+import React, { useState } from "react";
+import { CheckCircle, Check } from "lucide-react";
 import { T, ESPRESSO, COFFEE, LINEN, CARD, MUTED, SOFT, serif, ff, fmt } from "../../lib/theme";
-import { api } from "../../lib/api";
-import type { Screen, CartGroup, OrderItem, Address } from "../../types";
+import type { Screen, CartGroup, OrderItem } from "../../types";
 
-// ── Payment Screen ──────────────────────────────────────────────────────────────
 export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s: Screen) => void; cartGroups: CartGroup[]; updateCart: (cart: CartGroup[]) => void; addOrder: (items: OrderItem[], total: number, payment: string, name?: string, phone?: string, address?: string) => Promise<string | boolean>; }) {
-  const [step, setStep] = useState<"address" | "card" | "otp">("address");
+  const [step, setStep] = useState<"address" | "review">("address");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [addressError, setAddressError] = useState("");
 
-  React.useEffect(() => {
-    api.get<{ addresses: Address[] }>("/addresses").then(res => {
-      if (res.addresses && res.addresses.length > 0) {
-        const defaultAddr = res.addresses.find(a => a.type === "delivery" && a.isDefault) || res.addresses.find(a => a.type === "delivery") || res.addresses[0];
-        setFullName(defaultAddr.name || "");
-        setPhone(defaultAddr.phone || "");
-        setAddress(`${defaultAddr.detail}, ${defaultAddr.district}, ${defaultAddr.province}`);
-      }
-    }).catch(() => {});
-  }, []);
-
-  const [paymentMethod, setPaymentMethod] = useState<"card" | "cod">("card");
-  const [selectedCard, setSelectedCard] = useState<string>("card-1");
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
-  const [otpError, setOtpError] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [orderId, setOrderId] = useState("");
   const [finalTotal, setFinalTotal] = useState(0);
-  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const [timeLeft, setTimeLeft] = useState(1800); // 30 minutes reservation timer
-
-  React.useEffect(() => {
-    if (step !== "otp") return;
-    const interval = setInterval(() => {
-      setTimeLeft(prev => prev > 0 ? prev - 1 : 0);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [step]);
-
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
-  };
-
-  // Mock saved cards
-  const savedCards = [
-    { id: "card-1", bank: "Vietcombank", type: "VISA", last4: "4521", exp: "12/27", default: true },
-    { id: "card-2", bank: "Techcombank", type: "MASTER", last4: "8834", exp: "09/26", default: false },
-    { id: "card-3", bank: "MB Bank", type: "VISA", last4: "1109", exp: "03/28", default: false },
-  ];
-
-  const selectedCardData = savedCards.find(c => c.id === selectedCard);
 
   // Calculate totals
   const allItems = cartGroups.flatMap(g => g.items);
@@ -79,77 +37,7 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
       return;
     }
     setAddressError("");
-    setStep("card");
-  };
-
-  const handleOtpChange = (index: number, value: string) => {
-    if (!/^\d*$/.test(value)) return;
-    const newOtp = [...otp];
-    newOtp[index] = value.slice(-1);
-    setOtp(newOtp);
-    setOtpError(false);
-
-    // Auto-focus next input
-    if (value && index < 5) {
-      otpRefs.current[index + 1]?.focus();
-    }
-
-    // Auto-submit when all filled
-    if (newOtp.every(d => d !== "") && newOtp.join("").length === 6) {
-      handleVerifyOtp(newOtp.join(""));
-    }
-  };
-
-  const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === "Backspace" && !otp[index] && index > 0) {
-      otpRefs.current[index - 1]?.focus();
-    }
-  };
-
-  const handleVerifyOtp = async (code: string) => {
-    // Mock: accept any 6 digits, but "123456" fails
-    if (code === "123456") {
-      setOtpError(true);
-      return;
-    }
-    setIsProcessing(true);
-
-    const orderItems: OrderItem[] = checkedItems.map(item => ({
-      id: item.id.toString(),
-      apiId: item.apiId,
-      productApiId: item.productApiId,
-      name: item.name,
-      price: item.price,
-      size: item.size,
-      qty: item.qty,
-      image: item.image,
-      condition: item.condition,
-      seller: cartGroups.find(g => g.items.some(i => i.id === item.id))?.seller || "",
-    }));
-
-    // Generate order ID
-    const newOrderId = `ORD-${Date.now().toString().slice(-6)}`;
-    setOrderId(newOrderId);
-    setFinalTotal(total);
-
-    // Add order and clear cart
-    const realOrderId = await addOrder(orderItems, total, `${selectedCardData?.bank} ***${selectedCardData?.last4}`, fullName, phone, address);
-    if (!realOrderId) {
-      setIsProcessing(false);
-      return;
-    }
-    setOrderId(typeof realOrderId === "string" ? realOrderId : newOrderId);
-
-    const newCart = cartGroups.map(g => ({
-      ...g,
-      items: g.items.filter(i => !i.checked)
-    })).filter(g => g.items.length > 0);
-    updateCart(newCart);
-
-    setTimeout(() => {
-      setIsProcessing(false);
-      setIsSuccess(true);
-    }, 1000); // reduced timeout since we already waited for api
+    setStep("review");
   };
 
   const handlePlaceCodOrder = async () => {
@@ -168,7 +56,7 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
       seller: cartGroups.find(g => g.items.some(i => i.id === item.id))?.seller || "",
     }));
 
-    // Generate order ID
+    // Generate tentative order ID in case backend doesn't return one
     const newOrderId = `ORD-${Date.now().toString().slice(-6)}`;
     setOrderId(newOrderId);
     setFinalTotal(total);
@@ -193,19 +81,6 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
     }, 1000);
   };
 
-  const handlePayNow = () => {
-    setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
-      setStep("otp");
-    }, 1500);
-  };
-
-  const cardTypeColors: Record<string, string> = {
-    VISA: "#1A1F71",
-    MASTER: "#EB001B",
-  };
-
   if (isSuccess) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: LINEN }}>
@@ -213,7 +88,7 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
           <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6" style={{ backgroundColor: "#27AE6022" }}>
             <CheckCircle size={48} style={{ color: "#27AE60" }} />
           </div>
-          <h2 className="text-2xl font-bold mb-2" style={{ ...serif, color: ESPRESSO }}>Thanh toán thành công!</h2>
+          <h2 className="text-2xl font-bold mb-2" style={{ ...serif, color: ESPRESSO }}>Đặt hàng thành công!</h2>
           <p className="text-sm mb-6" style={{ color: COFFEE, ...ff }}>
             Cảm ơn bạn đã mua sắm tại Thrifti. Đơn hàng của bạn đang được xử lý và sẽ giao trong 2-5 ngày.
           </p>
@@ -236,7 +111,7 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
             </div>
             <div className="flex justify-between">
               <span className="text-sm" style={{ color: COFFEE, ...ff }}>Phương thức</span>
-              <span className="text-sm font-bold" style={{ color: ESPRESSO, ...ff }}>{selectedCardData?.bank} ****{selectedCardData?.last4}</span>
+              <span className="text-sm font-bold" style={{ color: ESPRESSO, ...ff }}>COD (Thanh toán khi nhận hàng)</span>
             </div>
             <div className="flex justify-between items-center pt-2" style={{ borderTop: `1px dashed ${MUTED}` }}>
               <span className="text-sm font-bold" style={{ color: ESPRESSO, ...ff }}>Tổng thanh toán</span>
@@ -263,8 +138,7 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
         <div className="max-w-[600px] mx-auto px-6 py-5 flex items-center gap-4">
           <button
             onClick={() => {
-              if (step === "card") setStep("address");
-              else if (step === "otp") setStep("card");
+              if (step === "review") setStep("address");
               else go("cart");
             }}
             className="flex items-center gap-2 text-sm font-semibold transition-all hover:opacity-80"
@@ -283,11 +157,10 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
         <div className="flex items-center justify-center gap-3 mb-8">
           {[
             { num: 1, label: "Địa chỉ" },
-            { num: 2, label: "Chọn thẻ" },
-            { num: 3, label: "Xác thực OTP" },
-            { num: 4, label: "Hoàn tất" },
+            { num: 2, label: "Xác nhận đơn" },
+            { num: 3, label: "Hoàn tất" },
           ].map((s, i) => {
-            const currentIdx = step === "address" ? 0 : step === "card" ? 1 : step === "otp" ? 2 : 3;
+            const currentIdx = step === "address" ? 0 : step === "review" ? 1 : 2;
             const isActive = i <= currentIdx;
             return (
               <div key={s.num} className="flex items-center gap-3">
@@ -301,9 +174,9 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
                   >
                     {i < currentIdx ? <Check size={14} /> : s.num}
                   </div>
-                  <span className="text-sm font-semibold" style={{ color: isActive ? T : COFFEE, ...ff }}>{s.label}</span>
+                  <span className="hidden sm:inline text-sm font-semibold" style={{ color: isActive ? T : COFFEE, ...ff }}>{s.label}</span>
                 </div>
-                {i < 3 && <div className="w-8 h-px" style={{ backgroundColor: MUTED }} />}
+                {i < 2 && <div className="w-8 h-px" style={{ backgroundColor: MUTED }} />}
               </div>
             );
           })}
@@ -361,22 +234,22 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
               <div className="flex justify-between items-center">
                 <div>
                   <p className="text-xs" style={{ color: COFFEE }}>Tổng tiền ({checkedItems.length} sản phẩm):</p>
-                  <p className="text-xl font-bold text-amber-800 mt-0.5">{fmt(total)}</p>
+                  <p className="text-xl font-bold mt-0.5" style={{ color: T }}>{fmt(total)}</p>
                 </div>
                 <button
                   onClick={handleNextToPayment}
-                  className="px-6 py-3 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 shadow-md"
-                  style={{ backgroundColor: T }}
+                  className="px-6 py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90 shadow-md"
+                  style={{ backgroundColor: T, color: LINEN, ...ff }}
                 >
-                  Chọn phương thức thanh toán
+                  Xác nhận thông tin
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* STEP 2: Chọn thẻ */}
-        {step === "card" && (
+        {/* STEP 2: Xác nhận & Đặt hàng */}
+        {step === "review" && (
           <div className="space-y-6">
             {/* Order Summary Card */}
             <div className="rounded-2xl p-5" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
@@ -409,178 +282,33 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
               </div>
             </div>
 
-            {/* Payment Methods */}
-            <div>
+            {/* Payment Method Display */}
+            <div className="rounded-2xl p-5" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
               <h3 className="text-base font-bold mb-3" style={{ ...serif, color: ESPRESSO }}>Phương thức thanh toán</h3>
-              <div className="space-y-3">
-                {/* Online Payment */}
-                <button
-                  onClick={() => setPaymentMethod("card")}
-                  className="w-full p-4 rounded-2xl flex items-center gap-4 transition-all"
-                  style={{
-                    backgroundColor: paymentMethod === "card" ? `${T}0F` : CARD,
-                    border: `2px solid ${paymentMethod === "card" ? T : MUTED}`,
-                  }}
-                >
-                  <div className="w-12 h-8 rounded flex items-center justify-center text-xs font-bold" style={{ backgroundColor: "#1A1F71", color: LINEN }}>
-                    CARD
-                  </div>
-                  <div className="flex-1 text-left">
-                    <p className="text-sm font-bold" style={{ color: ESPRESSO, ...ff }}>Thanh toán trực tuyến</p>
-                    <p className="text-xs" style={{ color: COFFEE, ...ff }}>Qua cổng thanh toán giả lập</p>
-                  </div>
-                  {paymentMethod === "card" && <CheckCircle size={20} style={{ color: T }} />}
-                </button>
-
-                {/* COD Payment */}
-                <button
-                  onClick={() => setPaymentMethod("cod")}
-                  className="w-full p-4 rounded-2xl flex items-center gap-4 transition-all"
-                  style={{
-                    backgroundColor: paymentMethod === "cod" ? `${T}0F` : CARD,
-                    border: `2px solid ${paymentMethod === "cod" ? T : MUTED}`,
-                  }}
-                >
-                  <div className="w-12 h-8 rounded flex items-center justify-center text-xs font-bold border-2" style={{ borderColor: T, color: T, backgroundColor: CARD }}>
-                    COD
-                  </div>
-                  <div className="flex-1 text-left">
-                    <p className="text-sm font-bold" style={{ color: ESPRESSO, ...ff }}>Thanh toán khi nhận hàng (COD)</p>
-                    <p className="text-xs" style={{ color: COFFEE, ...ff }}>Thanh toán bằng tiền mặt khi nhận hàng</p>
-                  </div>
-                  {paymentMethod === "cod" && <CheckCircle size={20} style={{ color: T }} />}
-                </button>
+              <div className="w-full p-4 rounded-2xl flex items-center gap-4 transition-all" style={{ backgroundColor: `${T}0F`, border: `2px solid ${T}` }}>
+                <div className="w-12 h-8 rounded flex items-center justify-center text-xs font-bold border-2" style={{ borderColor: T, color: T, backgroundColor: CARD }}>
+                  COD
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-bold" style={{ color: ESPRESSO, ...ff }}>Thanh toán khi nhận hàng (COD)</p>
+                  <p className="text-xs" style={{ color: COFFEE, ...ff }}>Thanh toán bằng tiền mặt khi nhận hàng</p>
+                </div>
+                <CheckCircle size={20} style={{ color: T }} />
               </div>
             </div>
 
-            {/* Saved Cards (Only if Card selected) */}
-            {paymentMethod === "card" && (
-              <>
-                <div>
-                  <h3 className="text-sm font-bold mb-3 mt-4" style={{ ...serif, color: ESPRESSO }}>Chọn thẻ thanh toán</h3>
-                  <div className="space-y-3">
-                    {savedCards.map((card) => (
-                      <button
-                        key={card.id}
-                        onClick={() => setSelectedCard(card.id)}
-                        className="w-full p-3 rounded-2xl flex items-center gap-4 transition-all"
-                        style={{
-                          backgroundColor: selectedCard === card.id ? `${T}05` : CARD,
-                          border: `1px solid ${selectedCard === card.id ? T : MUTED}`,
-                        }}
-                      >
-                        <div className="w-10 h-6 rounded flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: cardTypeColors[card.type] || COFFEE, color: LINEN }}>
-                          {card.type}
-                        </div>
-                        <div className="flex-1 text-left">
-                          <p className="text-sm font-bold" style={{ color: ESPRESSO, ...ff }}>{card.bank}</p>
-                          <p className="text-xs" style={{ color: COFFEE, ...ff }}>{card.type} •••• {card.last4}</p>
-                        </div>
-                        {selectedCard === card.id && <CheckCircle size={16} style={{ color: T }} />}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <button className="w-full p-3 rounded-2xl border border-dashed text-sm font-semibold transition-all hover:opacity-80" style={{ borderColor: MUTED, color: COFFEE, backgroundColor: CARD, ...ff }}>
-                  + Thêm thẻ mới
-                </button>
-              </>
-            )}
-
             {/* Pay Button */}
             <button
-              onClick={paymentMethod === "cod" ? handlePlaceCodOrder : handlePayNow}
+              onClick={handlePlaceCodOrder}
               disabled={isProcessing}
               className="w-full py-4 rounded-2xl font-bold text-base shadow-lg transition-all hover:opacity-90 active:scale-[0.98]"
               style={{ backgroundColor: isProcessing ? MUTED : T, color: LINEN, cursor: isProcessing ? "not-allowed" : "pointer", ...ff }}
             >
-              {isProcessing ? "Đang xử lý..." : paymentMethod === "cod" ? `Đặt hàng - Thanh toán khi nhận` : `Thanh toán ${fmt(total)}`}
+              {isProcessing ? "Đang xử lý..." : `Đặt hàng - Thanh toán khi nhận`}
             </button>
-
             <p className="text-center text-xs" style={{ color: COFFEE, ...ff }}>
-              🔒 Thanh toán được bảo mật bởi SSL · Mã hóa end-to-end
+              Bạn chỉ thanh toán khi đã nhận và kiểm tra hàng.
             </p>
-          </div>
-        )}
-
-        {/* STEP 3: OTP Verification */}
-        {step === "otp" && (
-          <div className="space-y-6">
-            {/* OTP Card */}
-            <div className="rounded-2xl p-6 text-center" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
-              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: `${T}18` }}>
-                <Shield size={32} style={{ color: T }} />
-              </div>
-              <h3 className="text-lg font-bold mb-2" style={{ ...serif, color: ESPRESSO }}>Xác thực thanh toán</h3>
-              <p className="text-sm mb-4" style={{ color: COFFEE, ...ff }}>
-                Nhập mã OTP được gửi đến số điện thoại <strong style={{ color: ESPRESSO }}>{phone.slice(0, 4)}***{phone.slice(-3)}</strong>
-              </p>
-              <p className="text-xs mb-6 px-4 py-2.5 rounded-xl" style={{ backgroundColor: SOFT, color: COFFEE, border: `1.5px solid ${MUTED}`, ...ff }}>
-                🔑 <strong>Hướng dẫn Demo:</strong> Nhập 6 chữ số bất kỳ (VD: 000000) để xác thực thành công. Nhập <strong>123456</strong> để mô phỏng lỗi giao dịch.
-              </p>
-
-              {/* OTP Input */}
-              <div className="flex justify-center gap-2 mb-4">
-                {otp.map((digit, i) => (
-                  <input
-                    key={i}
-                    ref={(el) => { if (el) otpRefs.current[i] = el; }}
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleOtpChange(i, e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(i, e)}
-                    className="w-12 h-14 rounded-xl text-center text-xl font-bold outline-none transition-all"
-                    style={{
-                      backgroundColor: SOFT,
-                      border: `2px solid ${otpError ? "#E74C3C" : digit ? T : MUTED}`,
-                      color: ESPRESSO,
-                    }}
-                  />
-                ))}
-              </div>
-
-              {otpError && (
-                <p className="text-sm mb-4" style={{ color: "#E74C3C", ...ff }}>
-                  Mã OTP không đúng. Vui lòng thử lại.
-                </p>
-              )}
-
-              <div className="flex flex-col items-center gap-1 mb-2">
-                <p className="text-xs" style={{ color: COFFEE, ...ff }}>
-                  Thời gian giữ hàng (Reservation):
-                </p>
-                <div className="text-2xl font-bold font-mono" style={{ color: timeLeft < 300 ? "#E74C3C" : ESPRESSO }}>
-                  {formatTime(timeLeft)}
-                </div>
-              </div>
-
-              <button className="mt-2 text-sm font-semibold transition-all hover:opacity-80" style={{ color: T, ...ff }}>
-                Gửi lại mã OTP qua SMS
-              </button>
-            </div>
-
-            {/* Payment Info */}
-            <div className="rounded-2xl p-4" style={{ backgroundColor: SOFT, border: `1px solid ${MUTED}` }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: ESPRESSO, ...ff }}>{selectedCardData?.bank}</p>
-                  <p className="text-xs" style={{ color: COFFEE, ...ff }}>{selectedCardData?.type} •••• {selectedCardData?.last4}</p>
-                </div>
-                <span className="text-lg font-bold" style={{ ...serif, color: T }}>{fmt(total)}</span>
-              </div>
-            </div>
-
-            {/* Processing Overlay */}
-            {isProcessing && (
-              <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
-                <div className="p-6 rounded-2xl text-center" style={{ backgroundColor: CARD }}>
-                  <div className="w-12 h-12 rounded-full border-4 border-t-transparent mx-auto mb-4 animate-spin" style={{ borderColor: T, borderTopColor: "transparent" }} />
-                  <p className="font-bold" style={{ color: ESPRESSO, ...ff }}>Đang xác thực...</p>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>

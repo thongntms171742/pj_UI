@@ -31,9 +31,8 @@ export function AdminScreen({
   onLogout
 }: AdminScreenProps) {
   const [activeAdminTab, setActiveAdminTab] = useState<"stats" | "c2c" | "users" | "sellers">("stats");
-  const [commissionRate, setCommissionRate] = useState<number>(10);
   const [timeFilter, setTimeFilter] = useState<"week" | "month" | "quarter" | "year">("week");
-  const [adminStats, setAdminStats] = useState<{ pendingListings: number; soldProducts: number; totalOrders: number; totalUsers: number; totalSellers: number; platformProfit: number } | null>(null);
+  const [adminStats, setAdminStats] = useState<{ pendingListings: number; soldProducts: number; totalOrders: number; totalUsers: number; totalSellers: number; platformProfit: number; platformFeeRate?: number; totalSales?: number } | null>(null);
   const [pendingSellers, setPendingSellers] = useState<any[]>([]);
 
   React.useEffect(() => {
@@ -137,10 +136,13 @@ export function AdminScreen({
     }
   };
 
-  // Platform revenue: pull from /admin/stats; fall back to 0 when API not ready
-  const totalC2CRevenue = adminStats?.platformProfit
+  // Platform revenue: pull entirely from /admin/stats — no client-side calculation
+  const commissionRate = adminStats?.platformFeeRate != null
+    ? Math.round(adminStats.platformFeeRate * 100)
+    : 5; // Default 5% as per backend business rule
+  const totalC2CRevenue = adminStats?.totalSales ?? (adminStats?.platformProfit
     ? Math.round(adminStats.platformProfit / (commissionRate / 100))
-    : 0;
+    : 0);
   const platformProfitFromC2C = adminStats?.platformProfit ?? 0;
 
   return (
@@ -257,9 +259,9 @@ export function AdminScreen({
               <div className="grid grid-cols-1 gap-8">
                 <div className="p-6 rounded-3xl bg-white border border-muted shadow-sm flex flex-col">
                   <div>
-                    <h3 className="text-sm font-bold mb-2" style={{ color: ESPRESSO, ...ff }}>Cấu hình tỷ lệ Chiết khấu Platform</h3>
+                    <h3 className="text-sm font-bold mb-2" style={{ color: ESPRESSO, ...ff }}>Tỷ lệ Chiết khấu Platform</h3>
                     <p className="text-xs text-coffee mb-6 leading-relaxed" style={ff}>
-                      Điều chỉnh tỷ lệ hoa hồng chiết khấu trên mỗi giao dịch C2C thành công. Thu nhập hoa hồng sẽ tự động cập nhật.
+                      Tỷ lệ hoa hồng được quy định bởi hệ thống backend. Thay đổi tỷ lệ cần được thực hiện qua cấu hình server.
                     </p>
                   </div>
                   <div className="space-y-5">
@@ -267,21 +269,12 @@ export function AdminScreen({
                       <span className="text-coffee">Tỷ lệ hoa hồng sàn:</span>
                       <span className="text-amber-700 font-mono text-sm">{commissionRate}%</span>
                     </div>
-                    <input
-                      type="range"
-                      min="5"
-                      max="30"
-                      value={commissionRate}
-                      onChange={(e) => setCommissionRate(Number(e.target.value))}
-                      className="w-full accent-amber-600 h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer"
-                    />
-                    <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
-                      <span>Min: 5%</span>
-                      <span>Max: 30%</span>
+                    <div className="w-full h-2.5 rounded-full" style={{ backgroundColor: MUTED }}>
+                      <div className="h-full rounded-full" style={{ width: `${(commissionRate / 30) * 100}%`, backgroundColor: T }} />
                     </div>
                   </div>
                   <div className="p-3.5 rounded-xl bg-gray-50 border text-[11px] text-coffee mt-4 leading-relaxed" style={ff}>
-                    <strong>Phí hoa hồng ước tính:</strong> {fmt(platformProfitFromC2C)} (dựa trên tổng doanh số C2C đạt {fmt(totalC2CRevenue)}).
+                    <strong>Phí hoa hồng thực tế:</strong> {fmt(platformProfitFromC2C)} (dựa trên tổng doanh số C2C đạt {fmt(totalC2CRevenue)}).
                   </div>
                 </div>
               </div>

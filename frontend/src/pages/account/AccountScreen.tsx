@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Clock, Package, Truck, Star, X, Store, Edit3, LogOut, Plus,
-  ShoppingBag, MessageCircle, MapPin, TrendingUp, Heart,
+  ShoppingBag, MessageCircle, TrendingUp, Heart,
   Eye, DollarSign, Shield, PlusCircle, ExternalLink, MapPinned
 } from "lucide-react";
 import { T, ESPRESSO, COFFEE, LINEN, CARD, MUTED, SOFT, serif, ff, fmt } from "../../lib/theme";
 import { getOrderTabStatus } from "../../lib/adapters";
 import { api } from "../../lib/api";
-import type { Screen, Order, OrderItem, SellerProduct, Shipment, Address } from "../../types";
+import type { Screen, Order, OrderItem, SellerProduct, Shipment } from "../../types";
 
 // ── Account Screen ──────────────────────────────────────────────────────────────
 export function AccountScreen({
@@ -27,6 +27,8 @@ export function AccountScreen({
   roles,
   isAdmin,
   showToast,
+  onUpdateAvatar,
+  defaultTab,
 }: {
   go: (s: Screen) => void;
   onLogout: () => void;
@@ -45,78 +47,23 @@ export function AccountScreen({
   roles?: string[];
   isAdmin?: boolean;
   onUpdateAvatar?: (url: string) => void;
+  defaultTab?: string;
 }) {
   const isUserAdmin = Boolean(isAdmin || roles?.includes("admin") || userEmail === "admin@thriftit.vn");
   // ── State quản lý ──────────────────────────────────────────────────────────
   const [accountTab, setAccountTab] = useState<string>(
-    userRole === "seller" ? "selling" : "purchases"
+    defaultTab || (userRole === "seller" ? "selling" : "purchases")
   );
   const [orderTab, setOrderTab] = useState<"pending" | "shipping" | "delivering" | "review" | "cancelled">("shipping");
   const [sellingTab, setSellingTab] = useState<"all" | "active" | "pending" | "sold" | "reviews">("all");
 
   useEffect(() => {
-    setAccountTab(userRole === "seller" ? "selling" : "purchases");
-  }, [userRole]);
-
-  // ── Quản lý địa chỉ ───────────────────────────────────────────────────────
-  const [addresses, setAddresses] = useState<Address[]>([]);
-  const [addressesLoading, setAddressesLoading] = useState(false);
-
-  const loadAddresses = useCallback(async () => {
-    setAddressesLoading(true);
-    try {
-      const res = await api.get<{ addresses: any[] }>("/addresses");
-      setAddresses(res.addresses.map(a => ({
-        id: a._id,
-        label: a.label,
-        name: a.name,
-        phone: a.phone,
-        province: a.province,
-        district: a.district,
-        ward: a.ward,
-        detail: a.detail,
-        isDefault: a.isDefault,
-        type: a.type
-      })));
-    } catch {
-      //
-    } finally {
-      setAddressesLoading(false);
+    if (defaultTab) {
+      setAccountTab(defaultTab);
+    } else {
+      setAccountTab(userRole === "seller" ? "selling" : "purchases");
     }
-  }, []);
-
-  useEffect(() => {
-    loadAddresses();
-  }, [loadAddresses]);
-
-  const [addressDialog, setAddressDialog] = useState<{ open: boolean; editId?: string; type: "delivery" | "warehouse"; label: string; name: string; phone: string; province: string; district: string; detail: string; isDefault: boolean } | null>(null);
-
-  const handleSaveAddress = async () => {
-    if (!addressDialog) return;
-    try {
-      const payload = {
-        label: addressDialog.label,
-        name: addressDialog.name,
-        phone: addressDialog.phone,
-        province: addressDialog.province,
-        district: addressDialog.district,
-        ward: "",
-        detail: addressDialog.detail,
-        isDefault: addressDialog.isDefault,
-        type: addressDialog.type,
-      };
-      if (addressDialog.editId) {
-        await api.put(`/addresses/${addressDialog.editId}`, payload);
-      } else {
-        await api.post(`/addresses`, payload);
-      }
-      showToast?.("Đã lưu địa chỉ!");
-      setAddressDialog(null);
-      loadAddresses();
-    } catch (e: any) {
-      showToast?.(e.message || "Lỗi lưu địa chỉ");
-    }
-  };
+  }, [defaultTab, userRole]);
 
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -167,17 +114,6 @@ export function AccountScreen({
       showToast?.("Đã cập nhật ảnh đại diện!");
     } catch (err: any) {
       showToast?.(err.message || "Lỗi cập nhật ảnh");
-    }
-  };
-
-  const handleDeleteAddress = async (id: string) => {
-    if (!confirm("Bạn có chắc chắn muốn xoá địa chỉ này?")) return;
-    try {
-      await api.delete(`/addresses/${id}`);
-      showToast?.("Đã xoá địa chỉ");
-      loadAddresses();
-    } catch (e: any) {
-      showToast?.(e.message || "Lỗi xoá địa chỉ");
     }
   };
 
@@ -248,11 +184,11 @@ export function AccountScreen({
   const [reviewComment, setReviewComment] = useState("");
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
-  const handleSellerUpdateStatus = (orderId: string, nextStatus: Order["status"]) => {
+  const handleSellerUpdateStatus = (orderId: string, nextStatus: Order["status"], skipApi = false) => {
     setSellerOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o))
     );
-    onUpdateOrderStatus?.(orderId, nextStatus);
+    onUpdateOrderStatus?.(orderId, nextStatus, skipApi);
   };
 
   const handleCreateShipment = async () => {
@@ -382,7 +318,7 @@ export function AccountScreen({
   const getOrderStatusLabel = (status: string) => {
     const labels: Record<string, string> = {
       pending: "Chờ thanh toán",
-      shipping: "Đang vận chuyển",
+      shipping: "Đang chuẩn bị hàng",
       delivering: "Đang giao hàng",
       review: "Chờ đánh giá",
       cancelled: "Đã hủy đơn",
@@ -554,7 +490,7 @@ export function AccountScreen({
       {reviewDialog}
       {/* Profile header */}
       <div style={{ background: `linear-gradient(135deg, ${ESPRESSO} 0%, ${COFFEE} 100%)` }}>
-        <div className="max-w-[1440px] mx-auto px-8 py-8 flex items-center gap-6">
+        <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8 flex flex-col md:flex-row items-center text-center md:text-left gap-6">
           <div className="relative group cursor-pointer">
             <label htmlFor="avatar-upload" className="cursor-pointer block">
               <img
@@ -562,7 +498,7 @@ export function AccountScreen({
                   ? "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=160&h=160&fit=crop&auto=format"
                   : "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=160&h=160&fit=crop&auto=format")}
                 alt="Avatar"
-                className="w-24 h-24 rounded-full object-cover border-4 shadow-lg transition-all group-hover:opacity-80"
+                className="w-24 h-24 rounded-full object-cover border-4 shadow-lg transition-all group-hover:opacity-80 mx-auto md:mx-0"
                 style={{ borderColor: T }}
               />
               {!isUserAdmin && (
@@ -582,15 +518,15 @@ export function AccountScreen({
               />
             )}
           </div>
-          <div>
+          <div className="flex flex-col items-center md:items-start w-full md:w-auto">
             <h2 className="text-2xl font-bold" style={{ ...serif, color: LINEN }}>{userName}</h2>
             <p className="text-sm mt-0.5" style={{ color: MUTED, ...ff }}>{userEmail}</p>
             {isUserAdmin ? (
-              <div className="flex items-center gap-5 mt-3">
+              <div className="flex flex-wrap justify-center md:justify-start items-center gap-5 mt-3">
                 <span className="text-sm px-2.5 py-0.5 rounded-full font-bold bg-amber-500 text-espresso" style={ff}>Hệ thống Admin</span>
               </div>
             ) : (
-              <div className="flex items-center gap-5 mt-3">
+              <div className="flex flex-wrap justify-center md:justify-start items-center gap-3 md:gap-5 mt-3">
                 <div className="flex items-center gap-1.5">
                   <div className="flex">
                     {[1,2,3,4,5].map((i) => (
@@ -606,14 +542,18 @@ export function AccountScreen({
                     {(userRating ?? 5).toFixed(1)}
                   </span>
                 </div>
-                <div className="h-4 w-px" style={{ backgroundColor: MUTED + "66" }} />
+                <div className="hidden md:block h-4 w-px" style={{ backgroundColor: MUTED + "66" }} />
                 <span className="text-sm" style={{ color: MUTED, ...ff }}>{sellerStats.soldProducts} giao dịch</span>
-                <div className="h-4 w-px" style={{ backgroundColor: MUTED + "66" }} />
-                <span className="text-sm px-2.5 py-0.5 rounded-full" style={{ backgroundColor: T + "33", color: T, ...ff }}>Seller uy tín</span>
+                <div className="hidden md:block h-4 w-px" style={{ backgroundColor: MUTED + "66" }} />
+                {(userRating ?? 5) >= 4.0 && sellerStats.soldProducts >= 20 ? (
+                  <span className="text-sm px-2.5 py-0.5 rounded-full" style={{ backgroundColor: T + "33", color: T, ...ff }}>Seller uy tín ✓</span>
+                ) : (
+                  <span className="text-sm px-2.5 py-0.5 rounded-full" style={{ backgroundColor: MUTED + "22", color: COFFEE, ...ff }}>Seller mới</span>
+                )}
               </div>
             )}
           </div>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="md:ml-auto flex flex-wrap justify-center items-center gap-3 w-full md:w-auto mt-4 md:mt-0">
             {!isUserAdmin ? (
               <>
                 {/* Toggle Buyer / Seller mode */}
@@ -623,7 +563,7 @@ export function AccountScreen({
                       const newRole = userRole === "buyer" ? "seller" : "buyer";
                       setUserRole(newRole);
                     }}
-                    className="flex items-center gap-2.5 px-4 py-3 rounded-xl font-semibold text-sm border-2 transition-all"
+                    className="flex-1 md:flex-none flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl font-semibold text-sm border-2 transition-all"
                     style={{
                       borderColor: T,
                       color: T,
@@ -642,7 +582,7 @@ export function AccountScreen({
                     else if (sellerStatus === "PENDING") go("seller-apply");
                     else go("seller-apply");
                   }}
-                  className="flex items-center gap-2.5 px-5 py-3 rounded-xl font-bold text-sm shadow-lg transition-all hover:opacity-90"
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2.5 px-5 py-3 rounded-xl font-bold text-sm shadow-lg transition-all hover:opacity-90"
                   style={{ backgroundColor: T, color: LINEN, ...ff }}
                 >
                   <PlusCircle size={17} />
@@ -654,7 +594,7 @@ export function AccountScreen({
             ) : (
               <button
                 onClick={() => go("admin")}
-                className="flex items-center gap-2.5 px-5 py-3 rounded-xl font-bold text-sm shadow-lg transition-all hover:opacity-90 bg-amber-500 text-espresso"
+                className="flex-1 md:flex-none flex items-center justify-center gap-2.5 px-5 py-3 rounded-xl font-bold text-sm shadow-lg transition-all hover:opacity-90 bg-amber-500 text-espresso"
                 style={ff}
               >
                 <Shield size={17} />
@@ -663,7 +603,7 @@ export function AccountScreen({
             )}
             <button
               onClick={onLogout}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm border-2 transition-all hover:bg-white/10"
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm border-2 transition-all hover:bg-white/10"
               style={{ borderColor: "#E74C3C", color: "#E74C3C", ...ff }}
             >
               <LogOut size={17} />
@@ -674,8 +614,8 @@ export function AccountScreen({
       </div>
 
       {isUserAdmin ? (
-        <div className="max-w-[1440px] mx-auto px-8 py-12">
-          <div className="bg-white border border-muted rounded-3xl p-10 text-center shadow-sm max-w-2xl mx-auto animate-fade-in">
+        <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-12">
+          <div className="bg-white border border-muted rounded-3xl p-6 md:p-10 text-center shadow-sm max-w-2xl mx-auto animate-fade-in">
             <div className="w-16 h-16 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto mb-6">
               <Shield size={32} />
             </div>
@@ -686,17 +626,17 @@ export function AccountScreen({
             <p className="text-xs text-muted-foreground mt-2">
               Để phê duyệt các sản phẩm chờ duyệt của người dùng, hãy mở Kênh quản trị chuyên dụng.
             </p>
-            <div className="mt-8 flex justify-center gap-4">
+            <div className="mt-8 flex flex-col md:flex-row justify-center gap-4">
               <button
                 onClick={() => go("admin")}
-                className="px-6 py-3 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-md"
+                className="px-6 py-3 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90 shadow-md w-full md:w-auto"
                 style={{ backgroundColor: T }}
               >
                 Mở Bảng điều khiển Admin
               </button>
               <button
                 onClick={onLogout}
-                className="px-6 py-3 rounded-xl text-xs font-bold border-2 transition-all hover:bg-gray-50"
+                className="px-6 py-3 rounded-xl text-xs font-bold border-2 transition-all hover:bg-gray-50 w-full md:w-auto"
                 style={{ borderColor: MUTED, color: COFFEE }}
               >
                 Đăng xuất
@@ -705,17 +645,15 @@ export function AccountScreen({
           </div>
         </div>
       ) : (
-        <div className="max-w-[1440px] mx-auto px-8 py-8">
+        <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8">
           {/* Tab điều hướng chính */}
-          <div className="flex items-center gap-2 mb-8">
+          <div className="flex items-center gap-2 mb-6 md:mb-8 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
             {(userRole === "seller" ? [
               { id: "selling", label: "Kinh doanh", icon: TrendingUp },
               { id: "messages", label: "Tin nhắn", icon: MessageCircle, badge: unreadMessages },
-              { id: "address", label: "Địa chỉ", icon: MapPin },
             ] : [
               { id: "purchases", label: "Đơn mua", icon: ShoppingBag },
               { id: "messages", label: "Tin nhắn", icon: MessageCircle, badge: unreadMessages },
-              { id: "address", label: "Địa chỉ", icon: MapPin },
             ]).map((tab) => (
               <button
                 key={tab.id}
@@ -743,7 +681,7 @@ export function AccountScreen({
           {accountTab === "purchases" && (
             <div>
               <h2 className="text-xl font-bold mb-5" style={{ ...serif, color: ESPRESSO }}>Đơn mua của tôi</h2>
-              <div className="grid grid-cols-4 gap-3 mb-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                 {orderTabs.map((tab) => (
                   <button
                     key={tab.id}
@@ -759,16 +697,24 @@ export function AccountScreen({
                         </span>
                       )}
                     </div>
-                    <span className="text-xs font-semibold text-center leading-tight" style={{ color: orderTab === tab.id ? tab.color : COFFEE, ...ff }}>{tab.label}</span>
+                    <span className="text-xs font-semibold text-center leading-tight px-1" style={{ color: orderTab === tab.id ? tab.color : COFFEE, ...ff }}>{tab.label}</span>
                   </button>
                 ))}
               </div>
 
               <div className="space-y-3">
                 {filteredOrders.map((order) => (
-                  <div key={order.id} className="flex items-center gap-4 p-4 rounded-2xl shadow-sm" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
-                    <img src={order.items[0]?.image} alt={order.items[0]?.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
+                  <div key={order.id} className="flex flex-col md:flex-row md:items-center gap-4 p-4 rounded-2xl shadow-sm" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
+                    <div className="flex gap-4">
+                      <img src={order.items[0]?.image} alt={order.items[0]?.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />
+                      <div className="flex-1 min-w-0 md:hidden block">
+                        <p className="text-sm font-semibold" style={{ color: ESPRESSO, ...ff }}>
+                          {order.items[0]?.name}{order.items.length > 1 && ` (+${order.items.length - 1} sản phẩm khác)`}
+                        </p>
+                        <p className="text-base font-bold mt-1" style={{ ...serif, color: T }}>{fmt(order.total)}</p>
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0 hidden md:block">
                       <p className="text-sm font-semibold" style={{ color: ESPRESSO, ...ff }}>
                         {order.items[0]?.name}{order.items.length > 1 && ` (+${order.items.length - 1} sản phẩm khác)`}
                       </p>
@@ -784,7 +730,23 @@ export function AccountScreen({
                         {getOrderStatusLabel(getOrderTabStatus(order.status))}
                       </span>
                     </div>
-                    <div className="text-right flex-shrink-0">
+                    
+                    {/* Mobile details block */}
+                    <div className="md:hidden">
+                      <p className="text-xs" style={{ color: COFFEE, ...ff }}>
+                        @{order.items[0]?.seller} · #{order.id} · {order.createdAt}
+                      </p>
+                      {order.shippingAddress && (
+                        <p className="text-[11px] mt-1 italic" style={{ color: COFFEE + "aa", ...ff }}>
+                          Giao tới: <strong>{order.shippingName}</strong> - {order.shippingAddress}
+                        </p>
+                      )}
+                      <span className="inline-block text-xs px-2.5 py-0.5 rounded-full mt-2 mb-3" style={{ backgroundColor: SOFT, color: COFFEE, ...ff }}>
+                        {getOrderStatusLabel(getOrderTabStatus(order.status))}
+                      </span>
+                    </div>
+                    
+                    <div className="md:text-right flex-shrink-0 mt-3 md:mt-0 pt-3 md:pt-0 border-t md:border-t-0" style={{ borderColor: MUTED }}>
                       <p className="text-base font-bold" style={{ ...serif, color: T }}>{fmt(order.total)}</p>
                       <div className="mt-2 flex gap-2 justify-end flex-wrap">
                         {getOrderTabStatus(order.status) === "pending" && (
@@ -900,7 +862,32 @@ export function AccountScreen({
                         {getOrderTabStatus(order.status) === "delivering" && (
                           <>
                             <button
-                              onClick={() => onUpdateOrderStatus && onUpdateOrderStatus(order.id, "DELIVERED")}
+                              onClick={async () => {
+                                // Backend rule: buyer can only set CANCELLED or COMPLETED.
+                                // The state machine must walk SHIPPING/DELIVERING → COMPLETED,
+                                // which may require a DELIVERED hop first. Try direct COMPLETED,
+                                // then DELIVERED → COMPLETED as fallback.
+                                const code = order.id || order.apiId;
+                                if (!code) {
+                                  showToast?.("⚠️ Thiếu mã đơn hàng.");
+                                  return;
+                                }
+                                try {
+                                  await api.patch(`/orders/${code}/status`, { status: "COMPLETED" });
+                                  onUpdateOrderStatus?.(order.id, "COMPLETED", true);
+                                  showToast?.("✓ Đã xác nhận nhận hàng. Cảm ơn bạn!");
+                                } catch (err1: any) {
+                                  try {
+                                    await api.patch(`/orders/${code}/status`, { status: "DELIVERED" });
+                                    await api.patch(`/orders/${code}/status`, { status: "COMPLETED" });
+                                    onUpdateOrderStatus?.(order.id, "COMPLETED", true);
+                                    showToast?.("✓ Đã xác nhận nhận hàng. Cảm ơn bạn!");
+                                  } catch (err2: any) {
+                                    const msg = err2?.message || err1?.message || "Không thể xác nhận đơn hàng";
+                                    showToast?.(`⚠️ ${msg}`);
+                                  }
+                                }
+                              }}
                               className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-80"
                               style={{ backgroundColor: "#27AE60", color: LINEN, ...ff }}
                             >
@@ -931,9 +918,21 @@ export function AccountScreen({
                   </div>
                 ))}
                 {filteredOrders.length === 0 && (
-                  <div className="py-16 flex flex-col items-center gap-3">
-                    <Package size={48} style={{ color: MUTED }} />
-                    <p className="text-base" style={{ color: COFFEE, ...ff }}>Chưa có đơn hàng nào</p>
+                  <div className="py-20 flex flex-col items-center gap-4 text-center">
+                    <div className="w-20 h-20 flex items-center justify-center rounded-full" style={{ backgroundColor: MUTED + '22' }}>
+                      <Package size={36} style={{ color: COFFEE }} />
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold" style={{ color: ESPRESSO, ...serif }}>Chưa có đơn hàng nào</p>
+                      <p className="text-sm mt-1 mb-5" style={{ color: COFFEE, ...ff }}>Bạn chưa có đơn hàng nào trong trạng thái này.</p>
+                    </div>
+                    <button
+                      onClick={() => go("search")}
+                      className="px-6 py-2.5 rounded-xl font-bold text-sm transition-all hover:opacity-90 shadow-sm"
+                      style={{ backgroundColor: T, color: LINEN, ...ff }}
+                    >
+                      Khám phá đồ vintage
+                    </button>
                   </div>
                 )}
               </div>
@@ -986,8 +985,12 @@ export function AccountScreen({
               {sellerOrdersLoading ? (
                 <div className="p-6 text-center text-sm" style={{ color: COFFEE }}>Đang tải đơn hàng…</div>
               ) : sellerOrders.filter((o) => ["PAID", "CONFIRMED", "PACKING", "SHIPPING", "DELIVERING"].includes(o.status)).length === 0 ? (
-                <div className="p-6 rounded-2xl text-center text-sm mb-8" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}`, color: COFFEE }}>
-                  Chưa có đơn hàng nào cần xử lý
+                <div className="py-12 rounded-2xl flex flex-col items-center justify-center gap-3 mb-8 text-center" style={{ backgroundColor: CARD, border: `1px dashed ${MUTED}` }}>
+                  <Package size={32} style={{ color: MUTED }} />
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: ESPRESSO, ...ff }}>Tất cả đã hoàn tất!</p>
+                    <p className="text-xs mt-1" style={{ color: COFFEE, ...ff }}>Chưa có đơn hàng nào cần bạn xử lý lúc này.</p>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-3 mb-8">
@@ -996,16 +999,29 @@ export function AccountScreen({
                     .map((order) => {
                       const isPacking = order.status === "PACKING";
                       return (
-                        <div key={order.id} className="flex items-center gap-4 p-4 rounded-2xl" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
-                          <img src={order.items[0]?.image} alt={order.items[0]?.name} className="w-16 h-16 rounded-xl object-cover" />
-                          <div className="flex-1 min-w-0">
+                        <div key={order.id} className="flex flex-col md:flex-row md:items-center gap-4 p-4 rounded-2xl" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
+                          <div className="flex gap-4">
+                            <img src={order.items[0]?.image} alt={order.items[0]?.name} className="w-16 h-16 rounded-xl object-cover" />
+                            <div className="flex-1 min-w-0 md:hidden block">
+                              <p className="text-sm font-semibold" style={{ color: ESPRESSO, ...ff }}>{order.items[0]?.name}</p>
+                              <p className="text-sm font-bold mt-1" style={{ color: T, ...serif }}>{fmt(order.total)}</p>
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0 hidden md:block">
                             <p className="text-sm font-semibold" style={{ color: ESPRESSO, ...ff }}>{order.items[0]?.name}</p>
                             <p className="text-xs" style={{ color: COFFEE, ...ff }}>#{order.id} · {order.createdAt}</p>
                             {order.shippingAddress && (
                               <p className="text-[11px] mt-1 italic" style={{ color: COFFEE + "aa", ...ff }}>→ {order.shippingAddress}</p>
                             )}
                           </div>
-                          <div className="text-right flex flex-col items-end gap-2">
+                          {/* Mobile details */}
+                          <div className="md:hidden">
+                            <p className="text-xs" style={{ color: COFFEE, ...ff }}>#{order.id} · {order.createdAt}</p>
+                            {order.shippingAddress && (
+                              <p className="text-[11px] mt-1 italic" style={{ color: COFFEE + "aa", ...ff }}>→ {order.shippingAddress}</p>
+                            )}
+                          </div>
+                          <div className="md:text-right flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-2 mt-2 md:mt-0 pt-2 md:pt-0 border-t md:border-t-0" style={{ borderColor: MUTED }}>
                             <p className="text-sm font-bold" style={{ color: T, ...serif }}>{fmt(order.total)}</p>
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: SOFT, color: COFFEE }}>{order.status}</span>
                             <div className="flex gap-2 flex-wrap justify-end">
@@ -1021,18 +1037,7 @@ export function AccountScreen({
                               {isPacking && (
                                 <button
                                   onClick={() => {
-                                    const wh = addresses.find(a => a.type === "warehouse" && a.isDefault) || addresses.find(a => a.type === "warehouse");
-                                    if (wh) {
-                                      setShipDialogPickup({
-                                        name: wh.name,
-                                        phone: wh.phone,
-                                        address: wh.detail,
-                                        province: wh.province,
-                                        district: wh.district,
-                                        ward: "",
-                                        email: "",
-                                      });
-                                    }
+                                    // Open shipment dialog with empty pickup fields — seller fills them in
                                     setShipDialogOrder(order);
                                   }}
                                   className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-90"
@@ -1044,12 +1049,12 @@ export function AccountScreen({
                               {(order.status === "SHIPPING" || order.status === "DELIVERING") && (
                                 <button
                                   onClick={async () => {
-                                    handleSellerUpdateStatus(order.id, order.status === "SHIPPING" ? "DELIVERING" : "DELIVERED");
+                                    handleSellerUpdateStatus(order.id, order.status === "SHIPPING" ? "DELIVERING" : "DELIVERED", true);
                                   }}
                                   className="text-xs px-3 py-1.5 rounded-lg font-semibold border transition-all hover:opacity-80"
                                   style={{ borderColor: "#27AE60", color: "#27AE60", ...ff }}
                                 >
-                                  {order.status === "SHIPPING" ? "(Mock) Shipper đang giao" : "(Mock) Đã giao thành công"}
+                                  {order.status === "SHIPPING" ? "Cập nhật: Đang đi giao" : "Cập nhật: Đã giao thành công"}
                                 </button>
                               )}
                             </div>
@@ -1211,157 +1216,14 @@ export function AccountScreen({
             </div>
           )}
 
-          {/* ── TAB: ĐỊA CHỈ ──────────────────────────────────────────────────── */}
-          {accountTab === "address" && (
-            <div>
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-xl font-bold" style={{ ...serif, color: ESPRESSO }}>Địa chỉ giao hàng</h2>
-                <button
-                  onClick={() => setAddressDialog({ open: true, type: "delivery", label: "Nhà riêng", name: userName || "", phone: "", province: "TP. Hồ Chí Minh", district: "", detail: "", isDefault: false })}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all hover:opacity-80"
-                  style={{ backgroundColor: T, color: LINEN, ...ff }}
-                >
-                  <PlusCircle size={15} />
-                  Thêm địa chỉ mới
-                </button>
-              </div>
-              
-              {addressesLoading ? (
-                <div className="p-8 text-center" style={{ color: COFFEE }}>Đang tải địa chỉ...</div>
-              ) : (
-                <div className="grid grid-cols-2 gap-4 mb-8">
-                  {addresses.filter(a => a.type === "delivery").map((addr) => (
-                  <div key={addr.id} className="p-5 rounded-2xl" style={{ backgroundColor: CARD, border: `1px solid ${addr.isDefault ? T : MUTED}` }}>
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm" style={{ color: ESPRESSO, ...ff }}>{addr.label}</span>
-                        {addr.isDefault && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: T + "18", color: T, ...ff }}>Mặc định</span>}
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => setAddressDialog({ open: true, editId: addr.id, type: addr.type, label: addr.label, name: addr.name, phone: addr.phone, province: addr.province, district: addr.district, detail: addr.detail, isDefault: addr.isDefault })} className="text-xs font-semibold" style={{ color: COFFEE, ...ff }}>Sửa</button>
-                        {!addr.isDefault && <button onClick={() => handleDeleteAddress(addr.id)} className="text-xs font-semibold" style={{ color: "#E74C3C", ...ff }}>Xóa</button>}
-                      </div>
-                    </div>
-                    <p className="font-semibold text-sm" style={{ color: ESPRESSO, ...ff }}>{addr.name} · {addr.phone}</p>
-                    <p className="text-xs mt-1" style={{ color: COFFEE, ...ff }}>{addr.detail}, {addr.district}, {addr.province}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-              {userRole === "seller" && (
-                <>
-                  <div className="flex items-center justify-between mb-5 border-t pt-8" style={{ borderColor: MUTED }}>
-                    <h2 className="text-xl font-bold" style={{ ...serif, color: ESPRESSO }}>Địa chỉ kho lấy hàng</h2>
-                    <button
-                      onClick={() => setAddressDialog({ open: true, type: "warehouse", label: "Kho chính", name: userName || "", phone: "", province: "TP. Hồ Chí Minh", district: "", detail: "", isDefault: false })}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all hover:opacity-80 border"
-                      style={{ borderColor: T, color: T, ...ff }}
-                    >
-                      <PlusCircle size={15} />
-                      Thêm kho mới
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    {addresses.filter(a => a.type === "warehouse").map((addr) => (
-                      <div key={addr.id} className="p-5 rounded-2xl" style={{ backgroundColor: CARD, border: `1px solid ${addr.isDefault ? T : MUTED}` }}>
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm" style={{ color: ESPRESSO, ...ff }}>{addr.label}</span>
-                            {addr.isDefault && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: T + "18", color: T, ...ff }}>Mặc định</span>}
-                          </div>
-                          <div className="flex gap-2">
-                            <button onClick={() => setAddressDialog({ open: true, editId: addr.id, type: addr.type, label: addr.label, name: addr.name, phone: addr.phone, province: addr.province, district: addr.district, detail: addr.detail, isDefault: addr.isDefault })} className="text-xs font-semibold" style={{ color: COFFEE, ...ff }}>Sửa</button>
-                            {!addr.isDefault && <button onClick={() => handleDeleteAddress(addr.id)} className="text-xs font-semibold" style={{ color: "#E74C3C", ...ff }}>Xóa</button>}
-                          </div>
-                        </div>
-                        <p className="font-semibold text-sm" style={{ color: ESPRESSO, ...ff }}>{addr.name} · {addr.phone}</p>
-                        <p className="text-xs mt-1" style={{ color: COFFEE, ...ff }}>{addr.detail}, {addr.district}, {addr.province}</p>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-              {addresses.length === 0 && !addressesLoading && (
-                <div className="text-center p-8 border rounded-2xl" style={{ borderColor: MUTED, color: COFFEE }}>
-                  Bạn chưa có địa chỉ nào.
-                </div>
-              )}
-            </div>
-          )}
+          {/* ── TAB: ĐỊA CHỈ — Removed ─────────────────────────────────────────── */}
+          {/* The address book relied on /api/addresses which is not in the OpenAPI spec.
+              Shipping address is captured per-order via PaymentScreen's checkout form.
+              For pickup addresses, sellers now enter them manually in the shipment dialog. */}
         </div>
       )}
 
       {shipmentDialog}
-
-      {/* ── Address Dialog ── */}
-      {addressDialog?.open && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={() => setAddressDialog(null)}>
-          <div className="p-6 rounded-3xl w-full max-w-md shadow-2xl relative" style={{ backgroundColor: LINEN }} onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-bold mb-4" style={{ ...serif, color: ESPRESSO }}>
-              {addressDialog.editId ? "Sửa địa chỉ" : (addressDialog.type === "warehouse" ? "Thêm kho hàng" : "Thêm địa chỉ giao hàng")}
-            </h3>
-            <div className="space-y-4">
-              <input
-                placeholder="Tên người nhận / Tên kho"
-                value={addressDialog.name}
-                onChange={e => setAddressDialog({...addressDialog, name: e.target.value})}
-                className="w-full px-4 py-3 rounded-xl border focus:outline-none"
-                style={{ borderColor: MUTED, backgroundColor: "#fff" }}
-              />
-              <input
-                placeholder="Số điện thoại"
-                value={addressDialog.phone}
-                onChange={e => setAddressDialog({...addressDialog, phone: e.target.value})}
-                className="w-full px-4 py-3 rounded-xl border focus:outline-none"
-                style={{ borderColor: MUTED, backgroundColor: "#fff" }}
-              />
-              <input
-                placeholder="Tỉnh/Thành phố"
-                value={addressDialog.province}
-                onChange={e => setAddressDialog({...addressDialog, province: e.target.value})}
-                className="w-full px-4 py-3 rounded-xl border focus:outline-none"
-                style={{ borderColor: MUTED, backgroundColor: "#fff" }}
-              />
-              <input
-                placeholder="Quận/Huyện"
-                value={addressDialog.district}
-                onChange={e => setAddressDialog({...addressDialog, district: e.target.value})}
-                className="w-full px-4 py-3 rounded-xl border focus:outline-none"
-                style={{ borderColor: MUTED, backgroundColor: "#fff" }}
-              />
-              <input
-                placeholder="Số nhà, Tên đường"
-                value={addressDialog.detail}
-                onChange={e => setAddressDialog({...addressDialog, detail: e.target.value})}
-                className="w-full px-4 py-3 rounded-xl border focus:outline-none"
-                style={{ borderColor: MUTED, backgroundColor: "#fff" }}
-              />
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="chkDefault"
-                  checked={addressDialog.isDefault}
-                  onChange={e => setAddressDialog({...addressDialog, isDefault: e.target.checked})}
-                />
-                <label htmlFor="chkDefault" className="text-sm font-semibold" style={{ color: COFFEE }}>
-                  Đặt làm {addressDialog.type === "warehouse" ? "kho mặc định" : "địa chỉ mặc định"}
-                </label>
-              </div>
-              <button
-                onClick={handleSaveAddress}
-                className="w-full py-3 rounded-xl font-bold text-white shadow-md transition-all hover:opacity-90 mt-2"
-                style={{ backgroundColor: T }}
-              >
-                Lưu địa chỉ
-              </button>
-            </div>
-            <button onClick={() => setAddressDialog(null)} className="absolute top-4 right-4" style={{ color: MUTED }}>
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

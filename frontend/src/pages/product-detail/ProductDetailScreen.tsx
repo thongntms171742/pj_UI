@@ -67,7 +67,13 @@ export function ProductDetailScreen({
     };
   }, [product.apiId, product.id]);
 
-  const condLabel = product.condition >= 95 ? "Như mới" : product.condition >= 85 ? "Rất tốt" : product.condition >= 70 ? "Tốt" : "Khá";
+  const condLabel = product.condition >= 95 ? "Như mới" : product.condition >= 85 ? "Rất tốt" : product.condition >= 70 ? "Tốt" : product.condition >= 55 ? "Khá" : "Đã qua sử dụng";
+
+  // Compute real average rating from API reviews
+  const avgRating = reviews.length > 0
+    ? reviews.reduce((acc, r) => acc + (r.rating || 5), 0) / reviews.length
+    : 0;
+  const avgRatingDisplay = avgRating > 0 ? avgRating.toFixed(1) : null;
 
   const categoryImages: Record<string, string[]> = {
     "Áo": [
@@ -100,16 +106,16 @@ export function ProductDetailScreen({
         <div className="max-w-[1440px] mx-auto flex items-center gap-2 text-sm" style={{ color: COFFEE, ...ff }}>
           <button onClick={() => go("home")} className="hover:text-amber-700 transition-colors">Trang chủ</button>
           <ChevronRight size={14} />
-          <button onClick={() => go("search")} className="hover:text-amber-700 transition-colors">{product.category}</button>
+          <button onClick={() => go("search")} className="hover:text-amber-700 transition-colors">{product.category || "Sản phẩm"}</button>
           <ChevronRight size={14} />
           <span className="font-semibold" style={{ color: ESPRESSO }}>{product.name}</span>
         </div>
       </div>
 
-      <div className="max-w-[1440px] mx-auto px-8 py-8">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 480px", gap: "48px" }}>
+      <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8">
+        <div className="flex flex-col lg:flex-row gap-8 lg:gap-12">
           {/* Left: Images */}
-          <div>
+          <div className="flex-1 lg:max-w-[calc(100%-528px)]">
             <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
               <img
                 src={reviewImages[selectedImg]}
@@ -134,71 +140,51 @@ export function ProductDetailScreen({
               ))}
             </div>
 
-            {/* Seller info */}
-            {seller && (
-              <div className="mt-8 p-5 rounded-2xl" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
-                <h3 className="text-sm font-bold mb-4" style={{ color: ESPRESSO, ...ff }}>Người bán</h3>
-                <div className="flex items-center gap-4">
-                  <img src={seller.avatar} alt={seller.name} className="w-14 h-14 rounded-full object-cover" />
-                  <div className="flex-1">
-                    <p className="font-bold" style={{ color: ESPRESSO, ...ff }}>{seller.name}</p>
-                    <p className="text-sm" style={{ color: COFFEE, ...ff }}>@{seller.handle}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="flex">
-                        {[1,2,3,4,5].map(i => <Star key={i} size={12} fill={T} stroke="none" />)}
-                      </div>
-                      <span className="text-xs font-bold" style={{ color: T }}>{seller.rating}</span>
-                      <span className="text-xs" style={{ color: COFFEE }}>· {seller.transactions} giao dịch</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => go("seller", undefined, seller)}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-all hover:opacity-80"
-                    style={{ borderColor: T, color: T, ...ff }}
-                  >
-                    Xem shop
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Seller info moved to Right Column to preserve mobile visual hierarchy */}
           </div>
 
           {/* Right: Info */}
-          <div className="space-y-6">
+          <div className="lg:w-[480px] flex-shrink-0 space-y-6">
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ backgroundColor: SOFT, color: COFFEE, ...ff }}>{product.category}</span>
                 <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ backgroundColor: `${T}20`, color: T, ...ff }}>Size {product.size}</span>
               </div>
               <h1 className="text-2xl font-bold leading-tight" style={{ ...serif, color: ESPRESSO }}>{product.name}</h1>
-              <div className="flex items-center gap-4 mt-3">
-                <div className="flex items-center gap-1">
-                  <div className="flex">
-                    {[1,2,3,4,5].map(i => <Star key={i} size={14} fill={T} stroke="none" />)}
+              {reviews.length > 0 ? (
+                <div className="flex items-center gap-4 mt-3">
+                  <div className="flex items-center gap-1">
+                    <div className="flex">
+                      {[1,2,3,4,5].map(i => <Star key={i} size={14} fill={i <= Math.round(avgRating) ? T : "none"} stroke={i <= Math.round(avgRating) ? "none" : MUTED} />)}
+                    </div>
+                    <span className="text-sm font-bold" style={{ color: T }}>{avgRatingDisplay}</span>
+                    <span className="text-sm" style={{ color: COFFEE }}>({reviews.length} đánh giá)</span>
                   </div>
-                  <span className="text-sm font-bold" style={{ color: T }}>4.9</span>
-                  <span className="text-sm" style={{ color: COFFEE }}>(128 đánh giá)</span>
                 </div>
-                <span className="text-sm" style={{ color: COFFEE }}>·</span>
-                <span className="text-sm" style={{ color: COFFEE }}>234 lượt thích</span>
-              </div>
+              ) : (
+                <p className="text-sm mt-3" style={{ color: COFFEE, ...ff }}>☆ Chưa có đánh giá</p>
+              )}
             </div>
 
             <div className="p-6 rounded-2xl" style={{ backgroundColor: CARD, border: `2px solid ${T}30` }}>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl font-bold" style={{ ...serif, color: T }}>{fmt(product.price)}</span>
-                <span className="text-sm line-through" style={{ color: MUTED }}>{fmt(product.price * 1.4)}</span>
               </div>
               <div className="flex items-center gap-3 mt-3">
                 <span className="text-sm px-2.5 py-1 rounded-full font-semibold" style={{ backgroundColor: "#27AE60", color: "white", ...ff }}>
-                  {product.condition}% mới
+                  {product.condition}/100
                 </span>
-                <span className="text-sm" style={{ color: COFFEE }}>{condLabel}</span>
+                <span className="text-sm font-semibold" style={{ color: COFFEE, ...ff }}>{condLabel}</span>
               </div>
+              <p className="text-xs mt-2" style={{ color: COFFEE, ...ff }}>
+                {product.quantity > 0
+                  ? `Còn ${product.quantity} sản phẩm`
+                  : "Hết hàng"}
+              </p>
             </div>
 
             {/* Actions */}
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={() => onLike(product.id)}
                 className="flex items-center gap-2 px-5 py-3 rounded-xl font-semibold border-2 transition-all hover:opacity-80"
@@ -207,24 +193,28 @@ export function ProductDetailScreen({
                 <Heart size={18} fill={product.liked ? "#E74C3C" : "none"} />
                 {product.liked ? "Đã thích" : "Yêu thích"}
               </button>
-              <div className="flex items-center gap-1 rounded-xl overflow-hidden" style={{ border: `1.5px solid ${MUTED}`, opacity: product.status === "sold" ? 0.5 : 1 }}>
-                <button disabled={product.status === "sold"} onClick={() => setQty(Math.max(1, qty - 1))} className="px-4 py-3 transition-all hover:bg-gray-100 disabled:cursor-not-allowed" style={{ backgroundColor: SOFT }}>
-                  <Minus size={16} style={{ color: COFFEE }} />
-                </button>
-                <span className="px-4 py-3 font-bold" style={{ backgroundColor: CARD, color: ESPRESSO }}>{qty}</span>
-                <button disabled={product.status === "sold" || qty >= product.quantity} onClick={() => setQty(qty + 1)} className="px-4 py-3 transition-all hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50" style={{ backgroundColor: T, color: LINEN }}>
-                  <Plus size={16} />
-                </button>
-              </div>
+              {product.quantity > 0 && product.status !== "sold" && (
+                <div className="flex items-center gap-1 rounded-xl overflow-hidden" style={{ border: `1.5px solid ${MUTED}` }}>
+                  <button disabled={qty <= 1} onClick={() => setQty(Math.max(1, qty - 1))} className="px-4 py-3 transition-all hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50" style={{ backgroundColor: SOFT }}>
+                    <Minus size={16} style={{ color: COFFEE }} />
+                  </button>
+                  <span className="px-4 py-3 font-bold" style={{ backgroundColor: CARD, color: ESPRESSO }}>{qty}</span>
+                  <button disabled={qty >= product.quantity} onClick={() => setQty(qty + 1)} className="px-4 py-3 transition-all hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50" style={{ backgroundColor: T, color: LINEN }}
+                    title={qty >= product.quantity ? `Chỉ còn ${product.quantity} sản phẩm` : undefined}
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+              )}
             </div>
 
-            {product.status === "sold" ? (
+            {product.status === "sold" || product.quantity <= 0 ? (
               <button
                 disabled
-                className="w-full py-4 rounded-2xl text-base font-bold cursor-not-allowed opacity-50 shadow-md"
+                className="w-full py-4 rounded-2xl text-base font-bold cursor-not-allowed opacity-60 shadow-md"
                 style={{ backgroundColor: COFFEE, color: LINEN, ...ff }}
               >
-                SẢN PHẨM ĐÃ BÁN (HẾT HÀNG)
+                {product.status === "sold" ? "SẢN PHẨM ĐÃ BÁN" : "HẾT HÀNG"}
               </button>
             ) : (
               <>
@@ -234,8 +224,8 @@ export function ProductDetailScreen({
                     onAddToCart(product, qty); setAddedToCart(true); setTimeout(() => setAddedToCart(false), 2000); 
                   }}
                   disabled={qty > product.quantity}
-                  className="w-full py-4 rounded-2xl text-base font-bold shadow-lg transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ backgroundColor: addedToCart ? "#27AE60" : T, color: LINEN, ...ff }}
+                  className="w-full py-4 rounded-2xl text-base font-bold transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed border-2"
+                  style={{ borderColor: addedToCart ? "#27AE60" : MUTED, backgroundColor: addedToCart ? "#E9F7EF" : "transparent", color: addedToCart ? "#27AE60" : ESPRESSO, ...ff }}
                 >
                   {addedToCart ? "✓ Đã thêm vào giỏ hàng" : "Thêm vào giỏ hàng"}
                 </button>
@@ -245,12 +235,40 @@ export function ProductDetailScreen({
                     onAddToCart(product, qty); go("cart"); 
                   }}
                   disabled={qty > product.quantity}
-                  className="w-full py-4 rounded-2xl text-base font-bold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ backgroundColor: ESPRESSO, color: LINEN, ...ff }}
+                  className="w-full py-4 rounded-2xl text-base font-bold shadow-lg transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: T, color: LINEN, ...ff }}
                 >
                   Mua ngay
                 </button>
               </>
+            )}
+
+            {/* Seller info */}
+            {seller && (
+              <div className="mt-8 p-5 rounded-2xl" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
+                <h3 className="text-sm font-bold mb-4 uppercase tracking-widest" style={{ color: MUTED, ...ff }}>Người bán</h3>
+                <div className="flex items-center gap-4">
+                  <img src={seller.avatar} alt={seller.name} className="w-14 h-14 rounded-full object-cover" />
+                  <div className="flex-1">
+                    <p className="font-bold" style={{ color: ESPRESSO, ...ff }}>{seller.name}</p>
+                    <p className="text-sm" style={{ color: COFFEE, ...ff }}>@{seller.handle}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex">
+                        {[1,2,3,4,5].map(i => <Star key={i} size={12} fill={i <= Math.round(seller.rating) ? T : "none"} stroke={i <= Math.round(seller.rating) ? "none" : MUTED} />)}
+                      </div>
+                      <span className="text-xs font-bold" style={{ color: T }}>{seller.rating.toFixed(1)}</span>
+                      <span className="text-xs" style={{ color: COFFEE }}>· {seller.transactions} giao dịch</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => go("seller", undefined, seller)}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:underline"
+                    style={{ color: T, ...ff }}
+                  >
+                    Xem shop
+                  </button>
+                </div>
+              </div>
             )}
 
             {/* Trust badges */}

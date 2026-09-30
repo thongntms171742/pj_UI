@@ -99,9 +99,18 @@ async function request<T>(path: string, init: RequestInitJson = {}): Promise<T> 
       } catch {}
     }
     if (softFail) return null as unknown as T;
-    const msg =
-      (details && typeof details === "object" && "error" in details && (details as { error: string }).error) ||
-      `Request failed (${res.status})`;
+    let msg = `Request failed (${res.status})`;
+    if (details && typeof details === "object") {
+      if ("error" in details) {
+        const errVal = (details as any).error;
+        msg = typeof errVal === "string" ? errVal : JSON.stringify(errVal);
+      } else if ("message" in details) {
+        const msgVal = (details as any).message;
+        msg = typeof msgVal === "string" ? msgVal : JSON.stringify(msgVal);
+      } else {
+        msg = JSON.stringify(details);
+      }
+    }
     throw new ApiError(msg, res.status, details);
   }
 

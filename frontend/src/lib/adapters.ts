@@ -88,7 +88,7 @@ const STATUS_TAB_MAP: Record<string, "pending" | "shipping" | "delivering" | "re
   PAID: "shipping",
   CONFIRMED: "shipping",
   PACKING: "shipping",
-  SHIPPING: "shipping",
+  SHIPPING: "delivering",
   DELIVERING: "delivering",
   DELIVERED: "review",
   COMPLETED: "review",

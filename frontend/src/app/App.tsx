@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { Routes, Route, useNavigate, useLocation, useParams, Navigate } from "react-router";
 import { Sparkles } from "lucide-react";
 import {
   T, ESPRESSO, COFFEE, LINEN, MUTED, SOFT, ff, serif,
@@ -15,7 +16,7 @@ import type {
 } from "../types";
 import { api, ApiError, setToken } from "../lib/api";
 import {
-  adaptProduct, adaptOrder, adaptCartItems, adaptNotification, adaptToSellerProduct,
+  adaptProduct, adaptSeller, adaptOrder, adaptCartItems, adaptNotification, adaptToSellerProduct,
 } from "../lib/adapters";
 
 import { Header } from "../components/layout/Header";
@@ -70,19 +71,238 @@ function setStoredSession(u: AuthUser | null) {
   } catch {}
 }
 
+export function screenToPath(s: Screen, product?: Product, seller?: Seller): string {
+  switch (s) {
+    case "home":
+      return "/";
+    case "login":
+      return "/login";
+    case "register":
+      return "/register";
+    case "search":
+      return "/products";
+    case "cart":
+      return "/cart";
+    case "payment":
+      return "/checkout";
+    case "account":
+      return "/account";
+    case "chat":
+      return "/messages";
+    case "notification":
+      return "/notifications";
+    case "post":
+      return "/sell";
+    case "seller-apply":
+      return "/seller/apply";
+    case "admin":
+      return "/admin";
+    case "seller":
+      return seller?.handle ? `/sellers/${seller.handle}` : "/seller";
+    case "product-detail":
+      return product ? `/products/${product.apiId || product.id}` : "/products";
+    default:
+      return "/";
+  }
+}
+
+export function pathToScreen(pathname: string): Screen {
+  if (pathname === "/" || pathname === "") return "home";
+  if (pathname.startsWith("/login")) return "login";
+  if (pathname.startsWith("/register")) return "register";
+  if (pathname.startsWith("/cart")) return "cart";
+  if (pathname.startsWith("/checkout") || pathname.startsWith("/payment")) return "payment";
+  if (pathname.startsWith("/account")) return "account";
+  if (pathname.startsWith("/messages") || pathname.startsWith("/chat")) return "chat";
+  if (pathname.startsWith("/notifications")) return "notification";
+  if (pathname.startsWith("/sell") || pathname.startsWith("/post")) return "post";
+  if (pathname.startsWith("/seller/apply")) return "seller-apply";
+  if (pathname.startsWith("/sellers/") || pathname === "/seller") return "seller";
+  if (pathname.startsWith("/products/")) return "product-detail";
+  if (pathname.startsWith("/products") || pathname.startsWith("/search")) return "search";
+  if (pathname.startsWith("/admin")) return "admin";
+  return "home";
+}
+
+function ProductDetailRouteWrapper({
+  products,
+  go,
+  onLike,
+  onAddToCart,
+  selectedProduct,
+  setSelectedProduct,
+}: {
+  products: Product[];
+  go: (s: Screen, p?: Product, se?: Seller) => void;
+  onLike: (id: number) => void;
+  onAddToCart: (product: Product, qty: number) => void;
+  selectedProduct: Product | null;
+  setSelectedProduct: React.Dispatch<React.SetStateAction<Product | null>>;
+}) {
+  const { id } = useParams<{ id: string }>();
+  const [loading, setLoading] = useState(
+    !selectedProduct || (selectedProduct.apiId !== id && String(selectedProduct.id) !== id)
+  );
+  const [product, setProduct] = useState<Product | null>(
+    selectedProduct && (selectedProduct.apiId === id || String(selectedProduct.id) === id)
+      ? selectedProduct
+      : products.find((p) => p.apiId === id || String(p.id) === id) || null
+  );
+
+  useEffect(() => {
+    if (!id) return;
+    const existing = products.find((p) => p.apiId === id || String(p.id) === id);
+    if (existing) {
+      setProduct(existing);
+      setSelectedProduct(existing);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    api
+      .get<{ product: any }>(`/products/${id}`)
+      .then((res) => {
+        const likedIds = new Set(getStoredLikedProducts().map(String));
+        const adapted = adaptProduct(res.product, likedIds);
+        setProduct(adapted);
+        setSelectedProduct(adapted);
+      })
+      .catch(() => {
+        setProduct(null);
+      })
+      .finally(() => setLoading(false));
+  }, [id, products, setSelectedProduct]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-12" style={{ backgroundColor: LINEN }}>
+        <p className="text-base font-semibold" style={{ color: COFFEE, ...ff }}>
+          Đang tải thông tin sản phẩm...
+        </p>
+      </div>
+    );
+  }
+
+  if (!product) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-12 gap-4" style={{ backgroundColor: LINEN }}>
+        <p className="text-lg font-bold" style={{ color: ESPRESSO, ...serif }}>
+          Không tìm thấy sản phẩm
+        </p>
+        <button
+          onClick={() => go("search")}
+          className="px-6 py-2.5 rounded-xl font-bold text-sm transition-all hover:opacity-90"
+          style={{ backgroundColor: T, color: LINEN, ...ff }}
+        >
+          Xem tất cả sản phẩm
+        </button>
+      </div>
+    );
+  }
+
+  const handleLike = (productId: number) => {
+    onLike(productId);
+    setProduct((prev) => (prev && prev.id === productId ? { ...prev, liked: !prev.liked } : prev));
+  };
+
+  return <ProductDetailScreen product={product} go={go} onLike={handleLike} onAddToCart={onAddToCart} />;
+}
+
+function SellerRouteWrapper({
+  go,
+  products,
+  onAddToCart,
+  selectedSeller,
+  setSelectedSeller,
+}: {
+  go: (s: Screen, p?: Product, se?: Seller) => void;
+  products: Product[];
+  onAddToCart: (product: Product) => void;
+  selectedSeller: Seller | null;
+  setSelectedSeller: React.Dispatch<React.SetStateAction<Seller | null>>;
+}) {
+  const { handle } = useParams<{ handle: string }>();
+  const [loading, setLoading] = useState(!selectedSeller || selectedSeller.handle !== handle);
+  const [seller, setSeller] = useState<Seller | null>(
+    selectedSeller && selectedSeller.handle === handle ? selectedSeller : null
+  );
+
+  useEffect(() => {
+    if (!handle) return;
+    if (selectedSeller && selectedSeller.handle === handle) {
+      setSeller(selectedSeller);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    api
+      .get<{ seller: any }>(`/sellers/${handle}`)
+      .then((res) => {
+        const adapted = adaptSeller(res.seller);
+        setSeller(adapted);
+        setSelectedSeller(adapted);
+      })
+      .catch(() => {
+        setSeller(null);
+      })
+      .finally(() => setLoading(false));
+  }, [handle, selectedSeller, setSelectedSeller]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-12" style={{ backgroundColor: LINEN }}>
+        <p className="text-base font-semibold" style={{ color: COFFEE, ...ff }}>
+          Đang tải thông tin cửa hàng...
+        </p>
+      </div>
+    );
+  }
+
+  if (!seller) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-12 gap-4" style={{ backgroundColor: LINEN }}>
+        <p className="text-lg font-bold" style={{ color: ESPRESSO, ...serif }}>
+          Không tìm thấy cửa hàng
+        </p>
+        <button
+          onClick={() => go("home")}
+          className="px-6 py-2.5 rounded-xl font-bold text-sm transition-all hover:opacity-90"
+          style={{ backgroundColor: T, color: LINEN, ...ff }}
+        >
+          Về trang chủ
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <SellerScreen
+      seller={seller}
+      go={go}
+      products={products.filter((p) => p.status === "active")}
+      onAddToCart={onAddToCart}
+    />
+  );
+}
+
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const session = getStoredSession();
+  if (!session?.token) {
+    return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+};
+
 export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const screen = pathToScreen(location.pathname);
+
   const session = getStoredSession();
   const storedUser = getStoredUser();
   const storedLiked = getStoredLikedProducts();
   const storedCart = getStoredJSON<CartGroup[]>(STORAGE_KEYS.cart);
-
-  const [screen, setScreen] = useState<Screen>(() => {
-    const u = getStoredSession();
-    if (!u) return storedUser.name ? "login" : "login";
-    if (u.roles.includes("admin")) return "admin";
-    const savedScreen = getStoredString(STORAGE_KEYS.screen);
-    return (savedScreen as Screen) || "home";
-  });
 
   // Products: loaded from backend. Empty initial state — show loading skeleton until API responds.
   const [products, setProducts] = useState<Product[]>([]);
@@ -139,7 +359,7 @@ export default function App() {
         setProducts(adapted);
       })
       .catch(() => {
-        // backend down → keep mock fallback
+        // Backend unreachable — keep product list empty. UI will show empty state.
       })
       .finally(() => setProductsLoading(false));
   }, []);
@@ -303,8 +523,7 @@ export default function App() {
 
   const go = (s: Screen, product?: Product, seller?: Seller) => {
     if (currentRoles.includes("admin") && s !== "admin" && s !== "login") {
-      setScreen("admin");
-      setStoredString(STORAGE_KEYS.screen, "admin");
+      navigate("/admin");
       return;
     }
     if (product) {
@@ -312,15 +531,16 @@ export default function App() {
       setStoredString("selectedProductId", product.apiId || product.id.toString());
     }
     if (seller) setSelectedSeller(seller);
-    setScreen(s);
-    setStoredString(STORAGE_KEYS.screen, s);
+
+    const targetPath = screenToPath(s, product, seller);
+    navigate(targetPath);
     // Reset scroll on screen change so we don't jump mid-page.
     window.scrollTo({ top: 0 });
   };
 
   const goToSearchWithTag = (tag: string) => {
     setActiveTag(tag);
-    setScreen("search");
+    navigate("/products");
   };
 
   const toggleLike = (id: number) => {
@@ -459,80 +679,71 @@ export default function App() {
 
   // ── LOGIN ──
   const handleLogin = async (userName: string, userEmail: string, password?: string) => {
-    // First try real backend login if a password is provided.
-    if (password) {
-      try {
-        const res = await api.post<{ token: string; user: { name: string; email: string; roles: string[], avatarUrl?: string, sellerStatus?: string } }>(
-          "/auth/login",
-          { email: userEmail, password }
-        );
-        const next: AuthUser = {
-          name: res.user.name,
-          email: res.user.email,
-          token: res.token,
-          roles: res.user.roles,
-          avatarUrl: res.user.avatarUrl,
-          sellerStatus: res.user.sellerStatus || "none",
-        };
-        setStoredSession(next);
-        setCurrentUser(next.name);
-        setCurrentEmail(next.email);
-        setCurrentUserAvatar(next.avatarUrl || "");
-        setCurrentRoles(next.roles);
-        setSellerStatus(next.sellerStatus);
-        setStoredUser(next.name, next.email);
-        setUserRole(next.roles.includes("seller") ? "seller" : "buyer");
+    if (!password) {
+      // No password provided — backend requires it for JWT issuance, so we refuse rather than fake login.
+      showToast("⚠️ Vui lòng nhập mật khẩu để đăng nhập.");
+      return;
+    }
+    try {
+      const res = await api.post<{ token: string; user: { name: string; email: string; roles: string[], avatarUrl?: string, sellerStatus?: string } }>(
+        "/auth/login",
+        { email: userEmail, password }
+      );
+      const next: AuthUser = {
+        name: res.user.name,
+        email: res.user.email,
+        token: res.token,
+        roles: res.user.roles,
+        avatarUrl: res.user.avatarUrl,
+        sellerStatus: res.user.sellerStatus || "none",
+      };
+      setStoredSession(next);
+      setCurrentUser(next.name);
+      setCurrentEmail(next.email);
+      setCurrentUserAvatar(next.avatarUrl || "");
+      setCurrentRoles(next.roles);
+      setSellerStatus(next.sellerStatus);
+      setStoredUser(next.name, next.email);
+      setUserRole(next.roles.includes("seller") ? "seller" : "buyer");
 
-        // Merge any guest cart items the user accumulated before signing in.
-        const guestCart = getStoredJSON<CartGroup[]>(STORAGE_KEYS.cart) ?? [];
-        const guestItems = guestCart.flatMap((g) =>
-          g.items
-            .filter((i) => !!i.productApiId)
-            .map((i) => ({ productId: i.productApiId as string, quantity: i.qty }))
-        );
-        if (guestItems.length > 0) {
-          try {
-            const merged = await api.post<{ items: import("../lib/api").ApiCartItem[] }>(
-              "/auth/cart/merge",
-              { items: guestItems }
-            );
-            const { groups } = adaptCartItems(merged.items);
-            setCartGroups(groups);
-            setStoredJSON(STORAGE_KEYS.cart, groups);
-            showToast(
-              `Chào mừng ${next.name}! Đã gộp ${guestItems.length} sản phẩm từ giỏ tạm vào tài khoản.`
-            );
-          } catch (err) {
-            console.warn("[cart] merge failed:", err);
-            showToast(`Chào mừng ${next.name}!`);
-          }
-        } else {
+      // Merge any guest cart items the user accumulated before signing in.
+      const guestCart = getStoredJSON<CartGroup[]>(STORAGE_KEYS.cart) ?? [];
+      const guestItems = guestCart.flatMap((g) =>
+        g.items
+          .filter((i) => !!i.productApiId)
+          .map((i) => ({ productId: i.productApiId as string, quantity: i.qty }))
+      );
+      if (guestItems.length > 0) {
+        try {
+          const merged = await api.post<{ items: import("../lib/api").ApiCartItem[] }>(
+            "/cart/merge",
+            { items: guestItems }
+          );
+          const { groups } = adaptCartItems(merged.items);
+          setCartGroups(groups);
+          setStoredJSON(STORAGE_KEYS.cart, groups);
+          showToast(
+            `Chào mừng ${next.name}! Đã gộp ${guestItems.length} sản phẩm từ giỏ tạm vào tài khoản.`
+          );
+        } catch (err) {
+          console.warn("[cart] merge failed:", err);
           showToast(`Chào mừng ${next.name}!`);
         }
-
-        if (next.roles.includes("admin")) {
-          go("admin");
-        } else {
-          go("home");
-        }
+      } else {
         showToast(`Chào mừng ${next.name}!`);
-        return;
-      } catch (err) {
-        const msg = err instanceof ApiError ? err.message : "Đăng nhập thất bại";
-        showToast(`⚠️ ${msg}`);
-        return;
       }
+
+      if (next.roles.includes("admin")) {
+        go("admin");
+      } else {
+        go("home");
+      }
+      return;
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Đăng nhập thất bại";
+      showToast(`⚠️ ${msg}`);
+      return;
     }
-
-    // Fallback: offline/demo login (no password) — useful when backend is down.
-    setCurrentUser(userName);
-    setCurrentEmail(userEmail);
-    setStoredUser(userName, userEmail);
-    // Remove the fake fallback logic since we should rely on backend roles for real login
-    setCurrentRoles([]);
-    setUserRole("buyer");
-
-    go("home");
   };
 
   // ── REGISTER ──
@@ -704,32 +915,25 @@ export default function App() {
         </div>
       )}
 
-      {screen === "login" && (
-        <LoginScreen
-          onLogin={(name, email, pwd) => handleLogin(name, email, pwd)}
-          onRegister={() => go("register")}
+      {screen !== "login" && screen !== "register" && screen !== "admin" && (
+        <Header
+          screen={screen}
+          go={go}
+          cartCount={cartCount}
+          activeTag={activeTag}
+          onTagChange={goToSearchWithTag}
+          headerQuery={headerQuery}
+          setHeaderQuery={setHeaderQuery}
+          currentUserEmail={currentEmail}
+          unreadNotifications={unreadNotifications}
+          isAdmin={currentRoles.includes("admin") || currentEmail === "admin@thriftit.vn"}
         />
       )}
-      {screen === "register" && (
-        <RegisterScreen onRegister={(name, email, pwd) => handleRegister(name, email, pwd)} onBack={() => go("login")} />
-      )}
-      {screen !== "login" && screen !== "register" && (
-        <>
-          {screen !== "admin" && (
-            <Header
-              screen={screen}
-              go={go}
-              cartCount={cartCount}
-              activeTag={activeTag}
-              onTagChange={goToSearchWithTag}
-              headerQuery={headerQuery}
-              setHeaderQuery={setHeaderQuery}
-              currentUserEmail={currentEmail}
-              unreadNotifications={unreadNotifications}
-            />
-          )}
-          <main>
-            {screen === "home" && (
+      <main>
+        <Routes>
+          <Route
+            path="/"
+            element={
               <HomeScreen
                 go={go}
                 products={products.filter((p) => p.status === "active")}
@@ -737,8 +941,29 @@ export default function App() {
                 onAddToCart={addToCart}
                 loading={productsLoading}
               />
-            )}
-            {screen === "search" && (
+            }
+          />
+          <Route
+            path="/login"
+            element={
+              <LoginScreen
+                onLogin={(name, email, pwd) => handleLogin(name, email, pwd)}
+                onRegister={() => go("register")}
+              />
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <RegisterScreen
+                onRegister={(name, email, pwd) => handleRegister(name, email, pwd)}
+                onBack={() => go("login")}
+              />
+            }
+          />
+          <Route
+            path="/products"
+            element={
               <SearchScreen
                 products={products.filter((p) => p.status === "active")}
                 onLike={toggleLike}
@@ -747,8 +972,25 @@ export default function App() {
                 activeTag={activeTag}
                 headerQuery={headerQuery}
               />
-            )}
-            {screen === "cart" && (
+            }
+          />
+          <Route path="/search" element={<Navigate to="/products" replace />} />
+          <Route
+            path="/products/:id"
+            element={
+              <ProductDetailRouteWrapper
+                products={products}
+                go={go}
+                onLike={toggleLike}
+                onAddToCart={addToCart}
+                selectedProduct={selectedProduct}
+                setSelectedProduct={setSelectedProduct}
+              />
+            }
+          />
+          <Route
+            path="/cart"
+            element={
               <CartScreen
                 go={go}
                 cartGroups={cartGroups}
@@ -756,79 +998,186 @@ export default function App() {
                 syncItem={updateCartItemApi}
                 deleteItem={deleteCartItemApi}
               />
-            )}
-            {screen === "chat" && <ChatScreen />}
-            {screen === "notification" && <NotificationScreen go={go} />}
-            {screen === "product-detail" && selectedProduct && (
-              <ProductDetailScreen product={selectedProduct} go={go} onLike={toggleLike} onAddToCart={addToCart} />
-            )}
-            {screen === "seller" && selectedSeller && (
-              <SellerScreen
-                seller={selectedSeller}
-                go={go}
-                products={products.filter((p) => p.status === "active")}
-                onAddToCart={addToCart}
-              />
-            )}
-            {screen === "seller-apply" && (
-              <SellerApplyScreen 
-                go={go} 
-                onApplySuccess={() => {
-                  setSellerStatus("pending_approval");
-                  const currentSession = getStoredSession();
-                  if (currentSession) {
-                    setStoredSession({
-                      ...currentSession,
-                      sellerStatus: "pending_approval"
-                    });
-                  }
-                }} 
-              />
-            )}
-            {screen === "payment" && (
-              <PaymentScreen go={go} cartGroups={cartGroups} updateCart={updateCart} addOrder={addOrder} />
-            )}
-            {screen === "account" && (
-              <AccountScreen
-                go={go}
-                onLogout={handleLogout}
-                userName={userRole === "seller" && currentShopName ? currentShopName : currentUser}
-                userAvatar={userRole === "seller" && currentShopAvatar ? currentShopAvatar : currentUserAvatar}
-                userRating={userRole === "seller" ? currentShopRating : undefined}
-                userEmail={currentEmail}
-                orders={orders}
-                myProducts={myProducts}
-                setMyProducts={setMyProducts}
-                userRole={userRole}
-                setUserRole={setUserRole}
-                showToast={showToast}
-                onUpdateOrderStatus={handleUpdateOrderStatus}
-                sellerStatus={currentRoles.includes("seller") ? "APPROVED" : sellerStatus === "pending_approval" ? "PENDING" : "NONE"}
-                roles={currentRoles}
-                onUpdateAvatar={(url) => {
-                  setCurrentUserAvatar(url);
-                  if (session) {
-                    setStoredSession({ ...session, avatarUrl: url });
-                  }
-                }}
-              />
-            )}
-            {screen === "post" && <PostScreen go={go} onAddProduct={handleAddProduct} />}
-            {screen === "admin" && (
-              <AdminScreen
+            }
+          />
+          <Route
+            path="/checkout"
+            element={
+              <ProtectedRoute>
+                <PaymentScreen
+                  go={go}
+                  cartGroups={cartGroups}
+                  updateCart={updateCart}
+                  addOrder={addOrder}
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/payment" element={<Navigate to="/checkout" replace />} />
+          <Route
+            path="/account"
+            element={
+              <ProtectedRoute>
+                <AccountScreen
+                  go={go}
+                  onLogout={handleLogout}
+                  userName={userRole === "seller" && currentShopName ? currentShopName : currentUser}
+                  userAvatar={userRole === "seller" && currentShopAvatar ? currentShopAvatar : currentUserAvatar}
+                  userRating={userRole === "seller" ? currentShopRating : undefined}
+                  userEmail={currentEmail}
+                  orders={orders}
+                  myProducts={myProducts}
+                  setMyProducts={setMyProducts}
+                  userRole={userRole}
+                  setUserRole={setUserRole}
+                  showToast={showToast}
+                  onUpdateOrderStatus={handleUpdateOrderStatus}
+                  sellerStatus={currentRoles.includes("seller") ? "APPROVED" : sellerStatus === "pending_approval" ? "PENDING" : "NONE"}
+                  roles={currentRoles}
+                  onUpdateAvatar={(url) => {
+                    setCurrentUserAvatar(url);
+                    if (session) {
+                      setStoredSession({ ...session, avatarUrl: url });
+                    }
+                  }}
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/account/orders"
+            element={
+              <ProtectedRoute>
+                <AccountScreen
+                  defaultTab="purchases"
+                  go={go}
+                  onLogout={handleLogout}
+                  userName={userRole === "seller" && currentShopName ? currentShopName : currentUser}
+                  userAvatar={userRole === "seller" && currentShopAvatar ? currentShopAvatar : currentUserAvatar}
+                  userRating={userRole === "seller" ? currentShopRating : undefined}
+                  userEmail={currentEmail}
+                  orders={orders}
+                  myProducts={myProducts}
+                  setMyProducts={setMyProducts}
+                  userRole={userRole}
+                  setUserRole={setUserRole}
+                  showToast={showToast}
+                  onUpdateOrderStatus={handleUpdateOrderStatus}
+                  sellerStatus={currentRoles.includes("seller") ? "APPROVED" : sellerStatus === "pending_approval" ? "PENDING" : "NONE"}
+                  roles={currentRoles}
+                  onUpdateAvatar={(url) => {
+                    setCurrentUserAvatar(url);
+                    if (session) {
+                      setStoredSession({ ...session, avatarUrl: url });
+                    }
+                  }}
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/account/selling"
+            element={
+              <ProtectedRoute>
+                <AccountScreen
+                  defaultTab="selling"
+                  go={go}
+                  onLogout={handleLogout}
+                  userName={userRole === "seller" && currentShopName ? currentShopName : currentUser}
+                  userAvatar={userRole === "seller" && currentShopAvatar ? currentShopAvatar : currentUserAvatar}
+                  userRating={userRole === "seller" ? currentShopRating : undefined}
+                  userEmail={currentEmail}
+                  orders={orders}
+                  myProducts={myProducts}
+                  setMyProducts={setMyProducts}
+                  userRole={userRole}
+                  setUserRole={setUserRole}
+                  showToast={showToast}
+                  onUpdateOrderStatus={handleUpdateOrderStatus}
+                  sellerStatus={currentRoles.includes("seller") ? "APPROVED" : sellerStatus === "pending_approval" ? "PENDING" : "NONE"}
+                  roles={currentRoles}
+                  onUpdateAvatar={(url) => {
+                    setCurrentUserAvatar(url);
+                    if (session) {
+                      setStoredSession({ ...session, avatarUrl: url });
+                    }
+                  }}
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/messages" element={<ProtectedRoute><ChatScreen /></ProtectedRoute>} />
+          <Route path="/chat" element={<Navigate to="/messages" replace />} />
+          <Route path="/notifications" element={<ProtectedRoute><NotificationScreen go={go} /></ProtectedRoute>} />
+          <Route path="/notification" element={<Navigate to="/notifications" replace />} />
+          <Route
+            path="/sellers/:handle"
+            element={
+              <SellerRouteWrapper
                 go={go}
                 products={products}
-                setProducts={setProducts}
-                myProductsByEmail={myProductsByEmail}
-                setMyProductsByEmail={setMyProductsByEmail}
-                userRole={userRole}
-                setUserRole={setUserRole}
-                onLogout={handleLogout}
+                onAddToCart={addToCart}
+                selectedSeller={selectedSeller}
+                setSelectedSeller={setSelectedSeller}
               />
-            )}
-          </main>
-          {screen !== "cart" && screen !== "payment" && screen !== "admin" && <Footer go={go} />}
-        </>
+            }
+          />
+          <Route
+            path="/seller"
+            element={
+              selectedSeller?.handle ? (
+                <Navigate to={`/sellers/${selectedSeller.handle}`} replace />
+              ) : userRole === "seller" ? (
+                <Navigate to="/account/selling" replace />
+              ) : (
+                <Navigate to="/seller/apply" replace />
+              )
+            }
+          />
+          <Route
+            path="/seller/apply"
+            element={
+              <ProtectedRoute>
+                <SellerApplyScreen
+                  go={go}
+                  onApplySuccess={() => {
+                    setSellerStatus("pending_approval");
+                    const currentSession = getStoredSession();
+                    if (currentSession) {
+                      setStoredSession({
+                        ...currentSession,
+                        sellerStatus: "pending_approval",
+                      });
+                    }
+                  }}
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/sell" element={<ProtectedRoute><PostScreen go={go} onAddProduct={handleAddProduct} /></ProtectedRoute>} />
+          <Route path="/post" element={<Navigate to="/sell" replace />} />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AdminScreen
+                  go={go}
+                  products={products}
+                  setProducts={setProducts}
+                  myProductsByEmail={myProductsByEmail}
+                  setMyProductsByEmail={setMyProductsByEmail}
+                  userRole={userRole}
+                  setUserRole={setUserRole}
+                  onLogout={handleLogout}
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+      {screen !== "login" && screen !== "register" && screen !== "cart" && screen !== "payment" && screen !== "admin" && (
+        <Footer go={go} />
       )}
     </div>
   );

@@ -118,7 +118,7 @@ export function CartScreen({
   return (
     <div style={{ backgroundColor: LINEN, minHeight: "100vh" }}>
       <div style={{ backgroundColor: COFFEE, borderBottom: `2px solid rgba(0,0,0,0.15)` }}>
-        <div className="max-w-[1440px] mx-auto px-8 py-4 flex items-center gap-3">
+        <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-4 flex items-center gap-3">
           <ShoppingCart size={22} style={{ color: LINEN }} />
           <h1 className="text-xl font-bold italic" style={{ ...serif, color: LINEN }}>
             Giỏ hàng của tôi
@@ -132,7 +132,7 @@ export function CartScreen({
         </div>
       </div>
 
-      <div className="max-w-[1440px] mx-auto px-8 py-8">
+      <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8">
         {allItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-28 gap-5">
             <div
@@ -150,6 +150,7 @@ export function CartScreen({
               </p>
             </div>
             <button
+              onClick={() => go("search")}
               className="px-8 py-3 rounded-xl font-bold text-sm transition-all hover:opacity-90 shadow-md"
               style={{ backgroundColor: T, color: LINEN, ...ff }}
             >
@@ -157,10 +158,8 @@ export function CartScreen({
             </button>
           </div>
         ) : (
-          <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: "28px", alignItems: "start" }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div className="flex flex-col lg:flex-row gap-7 items-start">
+            <div className="flex-1 w-full flex flex-col gap-4">
               <div
                 className="flex items-center gap-4 px-5 py-3 rounded-2xl"
                 style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}
@@ -228,7 +227,7 @@ export function CartScreen({
                     {group.items.map((item, idx) => (
                       <div
                         key={`${item.id}-buy`}
-                        className="flex items-center gap-4 px-5 py-4"
+                        className="flex flex-col sm:flex-row sm:items-center gap-4 px-5 py-4"
                         style={{
                           borderBottom: idx < group.items.length - 1 ? `1px solid ${MUTED}55` : "none",
                           backgroundColor: item.checked ? `${T}06` : CARD,
@@ -383,7 +382,7 @@ export function CartScreen({
               </div>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px", position: "sticky", top: "128px" }}>
+            <div className="lg:w-[360px] w-full flex flex-col gap-4 lg:sticky top-32">
               <div
                 className="rounded-2xl overflow-hidden"
                 style={{

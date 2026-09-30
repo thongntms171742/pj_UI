@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { Upload, X, Plus } from "lucide-react";
+import { Upload, X, Plus, Sparkles } from "lucide-react";
 import { T, ESPRESSO, COFFEE, LINEN, CARD, MUTED, SOFT, serif, ff, fmt } from "../../lib/theme";
 import type { Screen } from "../../types";
+import { api } from "../../lib/api";
 
 // ── Post Listing Screen ────────────────────────────────────────────────────────
 export function PostScreen({ go, onAddProduct }: { go: (s: Screen) => void; onAddProduct: (newProd: { name: string; price: number; category: string; desc: string; size: string; condition: number; image: string; quantity: number; }) => void }) {
@@ -16,6 +17,44 @@ export function PostScreen({ go, onAddProduct }: { go: (s: Screen) => void; onAd
   const [condition, setCondition] = useState(80);
   const [category, setCategory] = useState("Áo");
   const [quantity, setQuantity] = useState(1);
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const handleAiAnalyze = async () => {
+    if (!name.trim()) {
+      alert("Vui lòng nhập tên sản phẩm trước khi yêu cầu AI phân tích.");
+      return;
+    }
+    setAiAnalyzing(true);
+    try {
+      const res = await api.post<{
+        suggestedPrice?: number;
+        suggestedCategory?: string;
+        tags?: string[];
+      }>("/ai/analyze-listing", {
+        title: name,
+        description: desc,
+        image: photos[0] || "",
+      });
+
+      if (res.suggestedPrice && !price) {
+        setPrice(String(res.suggestedPrice));
+      }
+      if (res.suggestedCategory && ["Áo", "Quần", "Váy", "Áo khoác", "Phụ kiện"].includes(res.suggestedCategory)) {
+        setCategory(res.suggestedCategory);
+      }
+      if (res.tags && res.tags.length > 0) {
+        setDesc((prev) => (prev ? `${prev}\n\nTags: ${res.tags?.join(", ")}` : `Tags: ${res.tags?.join(", ")}`));
+      }
+      alert("✨ AI đã phân tích và gợi ý thông tin thành công!");
+    } catch {
+      alert("⚠️ Dịch vụ AI hiện đang bận hoặc quá tải. Bạn có thể tự điền thông tin bên dưới.");
+    } finally {
+      setAiAnalyzing(false);
+    }
+  };
 
   const condLabel = condition >= 95 ? "Như mới" : condition >= 85 ? "Rất tốt" : condition >= 70 ? "Tốt" : condition >= 55 ? "Khá" : "Trung bình";
 
@@ -212,14 +251,34 @@ export function PostScreen({ go, onAddProduct }: { go: (s: Screen) => void; onAd
             <div className="px-6 py-5 space-y-5">
               {/* Name */}
               <div>
-                <label className="text-xs font-bold block mb-1.5" style={{ color: COFFEE, ...ff }}>Tên sản phẩm *</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold" style={{ color: COFFEE, ...ff }}>Tên sản phẩm *</label>
+                  <button
+                    type="button"
+                    onClick={handleAiAnalyze}
+                    disabled={aiAnalyzing}
+                    className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg border transition-all hover:opacity-85 disabled:opacity-50"
+                    style={{ borderColor: T, color: T, backgroundColor: T + "12", ...ff }}
+                  >
+                    <Sparkles size={13} />
+                    {aiAnalyzing ? "AI đang gợi ý..." : "AI gợi ý giá & loại"}
+                  </button>
+                </div>
                 <input
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => { setName(e.target.value); setErrors(prev => ({ ...prev, name: "" })); }}
                   placeholder="VD: Áo linen vintage trắng năm 1994..."
                   className="w-full px-4 py-3 rounded-xl text-sm outline-none border-2 transition-all"
-                  style={{ backgroundColor: SOFT, border: `2px solid ${MUTED}`, color: ESPRESSO, ...ff }}
+                  style={{ backgroundColor: SOFT, border: `2px solid ${errors.name ? '#E74C3C' : MUTED}`, color: ESPRESSO, ...ff }}
                 />
+                <div className="flex justify-between mt-1">
+                  {errors.name ? (
+                    <span className="text-[10px] font-semibold" style={{ color: '#E74C3C' }}>{errors.name}</span>
+                  ) : (
+                    <span className="text-[10px]" style={{ color: COFFEE + '88' }}>Tối thiểu 5 ký tự, tối đa 100 ký tự</span>
+                  )}
+                  <span className="text-[10px] font-mono" style={{ color: name.length > 100 ? '#E74C3C' : COFFEE + '88' }}>{name.length}/100</span>
+                </div>
               </div>
 
               {/* Category */}
@@ -239,15 +298,21 @@ export function PostScreen({ go, onAddProduct }: { go: (s: Screen) => void; onAd
 
               {/* Description */}
               <div>
-                <label className="text-xs font-bold block mb-1.5" style={{ color: COFFEE, ...ff }}>Mô tả chi tiết</label>
+                <div className="flex justify-between mb-1.5">
+                  <label className="text-xs font-bold" style={{ color: COFFEE, ...ff }}>Mô tả chi tiết</label>
+                  <span className="text-[10px] font-mono" style={{ color: desc.length > 2000 ? '#E74C3C' : COFFEE + '88' }}>{desc.length}/2000</span>
+                </div>
                 <textarea
                   value={desc}
-                  onChange={(e) => setDesc(e.target.value)}
-                  placeholder="Chất liệu, nguồn gốc, lý do bán, tình trạng thực tế, hướng dẫn giặt..."
+                  onChange={(e) => setDesc(e.target.value.slice(0, 2000))}
+                  placeholder="Hãy mô tả: chất liệu, tình trạng, kích thước, nguồn gốc, lỗi/khuyết điểm nếu có..."
                   rows={4}
                   className="w-full px-4 py-3 rounded-xl text-sm outline-none border-2 resize-none transition-all"
                   style={{ backgroundColor: SOFT, border: `2px solid ${MUTED}`, color: ESPRESSO, ...ff }}
                 />
+                {desc.length < 20 && desc.length > 0 && (
+                  <span className="text-[10px] mt-0.5 block" style={{ color: '#E8A838' }}>Nên mô tả ít nhất 20 ký tự để sản phẩm dễ bán hơn</span>
+                )}
               </div>
 
               {/* Price & Size grid */}
@@ -323,32 +388,24 @@ export function PostScreen({ go, onAddProduct }: { go: (s: Screen) => void; onAd
               <div className="pt-2 flex gap-3">
                 <button
                   onClick={() => {
-                    if (photos.length === 0) {
-                      alert("Vui lòng tải lên ít nhất 1 ảnh sản phẩm để tiếp tục!");
-                      return;
-                    }
-                    if (!name.trim()) {
-                      alert("Vui lòng nhập tên sản phẩm!");
-                      return;
-                    }
-                    if (!price || Number(price) <= 0) {
-                      alert("Vui lòng nhập giá bán hợp lệ!");
+                    // Validate
+                    const newErrors: Record<string, string> = {};
+                    if (photos.length === 0) newErrors.photos = "Vui lòng tải lên ít nhất 1 ảnh sản phẩm.";
+                    if (!name.trim() || name.trim().length < 5) newErrors.name = name.trim().length === 0 ? "Vui lòng nhập tên sản phẩm." : "Tên sản phẩm quá ngắn (tối thiểu 5 ký tự).";
+                    if (name.length > 100) newErrors.name = "Tên sản phẩm quá dài (tối đa 100 ký tự).";
+                    if (!price || Number(price) <= 0) newErrors.price = "Vui lòng nhập giá bán hợp lệ (> 0).";
+                    if (Number(price) > 999999999) newErrors.price = "Giá bán quá lớn.";
+                    if (quantity < 1) newErrors.quantity = "Số lượng tối thiểu là 1.";
+
+                    if (Object.keys(newErrors).length > 0) {
+                      setErrors(newErrors);
+                      // Show first error as alert for visibility
+                      const firstError = Object.values(newErrors)[0];
+                      alert(`⚠️ ${firstError}`);
                       return;
                     }
 
-                    const selectedImage = photos[0];
-
-                    onAddProduct({
-                      name,
-                      price: Number(price),
-                      category,
-                      desc,
-                      size,
-                      condition,
-                      image: selectedImage,
-                      quantity,
-                    });
-                    go("account");
+                    setShowConfirm(true);
                   }}
                   className="flex-1 py-3.5 rounded-xl font-bold text-base shadow-md transition-all hover:opacity-90 active:scale-[0.98]"
                   style={{ backgroundColor: T, color: LINEN, ...ff }}
@@ -366,6 +423,63 @@ export function PostScreen({ go, onAddProduct }: { go: (s: Screen) => void; onAd
                 Sản phẩm của bạn sẽ được duyệt trong vòng 2–4 giờ trước khi hiển thị
               </p>
             </div>
+
+            {/* Confirmation Dialog */}
+            {showConfirm && (
+              <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={() => !submitting && setShowConfirm(false)}>
+                <div className="rounded-2xl shadow-2xl p-6 max-w-md w-full" style={{ backgroundColor: LINEN }} onClick={(e) => e.stopPropagation()}>
+                  <h3 className="text-lg font-bold mb-4" style={{ ...serif, color: ESPRESSO }}>Kiểm tra sản phẩm</h3>
+                  <div className="space-y-2 mb-6">
+                    {[
+                      { label: "Ảnh", ok: photos.length > 0, detail: `${photos.length} ảnh` },
+                      { label: "Tên", ok: name.trim().length >= 5, detail: name.trim().slice(0, 40) + (name.length > 40 ? "..." : "") },
+                      { label: "Danh mục", ok: true, detail: category },
+                      { label: "Giá", ok: Number(price) > 0, detail: fmt(Number(price)) },
+                      { label: "Số lượng", ok: quantity >= 1, detail: String(quantity) },
+                      { label: "Tình trạng", ok: true, detail: `${condition}/100 — ${condLabel}` },
+                    ].map((item) => (
+                      <div key={item.label} className="flex items-center justify-between text-sm" style={{ color: COFFEE }}>
+                        <span>{item.ok ? "✓" : "✗"} {item.label}</span>
+                        <span className="font-semibold" style={{ color: ESPRESSO }}>{item.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowConfirm(false)}
+                      disabled={submitting}
+                      className="flex-1 px-4 py-3 rounded-xl font-semibold text-sm border-2 transition-all hover:opacity-80"
+                      style={{ borderColor: MUTED, color: COFFEE, ...ff }}
+                    >
+                      Quay lại chỉnh sửa
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSubmitting(true);
+                        onAddProduct({
+                          name: name.trim(),
+                          price: Number(price),
+                          category,
+                          desc,
+                          size,
+                          condition,
+                          image: photos[0],
+                          quantity,
+                        });
+                        setSubmitting(false);
+                        setShowConfirm(false);
+                        go("account");
+                      }}
+                      disabled={submitting}
+                      className="flex-1 px-4 py-3 rounded-xl font-bold text-sm transition-all hover:opacity-90 disabled:opacity-50"
+                      style={{ backgroundColor: T, color: LINEN, ...ff }}
+                    >
+                      {submitting ? "Đang gửi..." : "Gửi duyệt 🌿"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
