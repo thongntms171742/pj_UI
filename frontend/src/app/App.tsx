@@ -417,33 +417,7 @@ export default function App() {
         .catch(() => {});
     }
 
-    if (currentRoles.includes("admin")) {
-      const loadPending = (res: { products?: import("../lib/api").ApiProduct[] } | import("../lib/api").ApiProduct[]) => {
-        const list = Array.isArray(res) ? res : res?.products || [];
-        const pending: SellerProduct[] = list.map((p) =>
-          adaptToSellerProduct(p, p.sellerId?.handle ?? "")
-        );
-        setMyProductsByEmail((prev) => ({
-          ...prev,
-          [currentEmail]: [
-            ...pending,
-            ...(prev[currentEmail] || []).filter(
-              (x) => !pending.some((pp) => pp.apiId === x.apiId)
-            ),
-          ],
-        }));
-      };
 
-      api
-        .get<any>("/products?status=pending")
-        .then(loadPending)
-        .catch(() => {
-          api
-            .get<any>("/admin/pending-listings")
-            .then(loadPending)
-            .catch(() => {});
-        });
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.token]);
 

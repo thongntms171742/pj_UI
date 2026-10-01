@@ -8,6 +8,7 @@ import {
 import type { Product, Screen, SellerProduct } from "../../types";
 import { ThriftLogo } from "../../components/layout/Logo";
 import { api, ApiError } from "../../lib/api";
+import { adaptToSellerProduct } from "../../lib/adapters";
 
 interface AdminScreenProps {
   go: (s: Screen) => void;
@@ -34,7 +35,13 @@ export function AdminScreen({
   const [timeFilter, setTimeFilter] = useState<"week" | "month" | "quarter" | "year">("week");
   const [adminStats, setAdminStats] = useState<{ pendingListings: number; soldProducts: number; totalOrders: number; totalUsers: number; totalSellers: number; platformProfit: number; platformFeeRate?: number; totalSales?: number } | null>(null);
   const [pendingSellers, setPendingSellers] = useState<any[]>([]);
+  const [pendingProducts, setPendingProducts] = useState<SellerProduct[]>([]);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [userPage, setUserPage] = useState(1);
+  const [userTotalPages, setUserTotalPages] = useState(1);
+  const [roleFilter, setRoleFilter] = useState<"all" | "buyer" | "seller">("all");
 
+  // Fetch Stats & Pending
   React.useEffect(() => {
     let mounted = true;
     api
@@ -49,25 +56,46 @@ export function AdminScreen({
         setPendingSellers(list);
       })
       .catch(() => {});
+    api
+      .get<any>("/admin/pending-listings")
+      .then((res) => {
+        if (!mounted) return;
+        const list = Array.isArray(res) ? res : res?.products || [];
+        const pending: SellerProduct[] = list.map((p: any) =>
+          adaptToSellerProduct(p, p.sellerId?.handle ?? "")
+        );
+        setPendingProducts(pending);
+      })
+      .catch(() => {});
     return () => {
       mounted = false;
     };
   }, []);
 
-  const pendingProducts = Object.values(myProductsByEmail).flat().filter(p => p.status === "pending");
+  // Fetch Users List
+  React.useEffect(() => {
+    if (activeAdminTab !== "users") return;
+    let mounted = true;
+    const roleQuery = roleFilter === "all" ? "" : `&role=${roleFilter}`;
+    api
+      .get<any>(`/admin/users?page=${userPage}&limit=15${roleQuery}`)
+      .then((res) => {
+        if (!mounted) return;
+        setAllUsers(res.users || []);
+        setUserTotalPages(res.totalPages || 1);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [activeAdminTab, userPage, roleFilter]);
 
   const handleApproveListing = async (id: number, apiId?: string) => {
-    const previousMyProducts = myProductsByEmail;
+    const previousPendingProducts = pendingProducts;
     const previousProducts = products;
 
     // Optimistic local update
-    setMyProductsByEmail(prev => {
-      const updated = { ...prev };
-      for (const email in updated) {
-        updated[email] = updated[email].map(p => p.id === id ? { ...p, status: "active" } : p);
-      }
-      return updated;
-    });
+    setPendingProducts(prev => prev.filter(p => p.id !== id));
     setProducts(prev => prev.map(p => p.id === id ? { ...p, status: "active" } : p));
 
     if (apiId) {
@@ -77,7 +105,7 @@ export function AdminScreen({
       } catch (err) {
         const msg = err instanceof ApiError ? err.message : "Lỗi duyệt tin";
         alert(`Duyệt thất bại: ${msg}`);
-        setMyProductsByEmail(previousMyProducts);
+        setPendingProducts(previousPendingProducts);
         setProducts(previousProducts);
       }
     } else {
@@ -86,16 +114,10 @@ export function AdminScreen({
   };
 
   const handleRejectListing = async (id: number, apiId?: string) => {
-    const previousMyProducts = myProductsByEmail;
+    const previousPendingProducts = pendingProducts;
     const previousProducts = products;
 
-    setMyProductsByEmail(prev => {
-      const updated = { ...prev };
-      for (const email in updated) {
-        updated[email] = updated[email].filter(p => p.id !== id);
-      }
-      return updated;
-    });
+    setPendingProducts(prev => prev.filter(p => p.id !== id));
     setProducts(prev => prev.filter(p => p.id !== id));
 
     if (apiId) {
@@ -108,7 +130,7 @@ export function AdminScreen({
         const msg = err instanceof ApiError ? err.message : "Lỗi từ chối";
         console.error("Reject failed:", msg);
         alert(`Từ chối thất bại: ${msg}`);
-        setMyProductsByEmail(previousMyProducts);
+        setPendingProducts(previousPendingProducts);
         setProducts(previousProducts);
       }
     } else {
@@ -133,6 +155,23 @@ export function AdminScreen({
       alert("Đã từ chối đăng ký người bán.");
     } catch (err) {
       alert("Lỗi từ chối");
+    }
+  };
+
+  const handleToggleUserStatus = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === "suspended" ? "active" : "suspended";
+    let reason = "";
+    if (newStatus === "suspended") {
+      const input = prompt("Nhập lý do khóa tài khoản (hoặc để trống):");
+      if (input === null) return; // User cancelled prompt
+      reason = input || "Vi phạm chính sách";
+    }
+    try {
+      await api.patch(`/admin/users/${id}/status`, { status: newStatus, reason });
+      setAllUsers(prev => prev.map(u => (u._id === id || u.id === id) ? { ...u, accountStatus: newStatus, accountStatusReason: reason } : u));
+      alert(`Đã ${newStatus === "suspended" ? "khóa" : "mở khóa"} tài khoản.`);
+    } catch (err: any) {
+      alert(`Lỗi: ${err?.message || "Không thể cập nhật trạng thái tài khoản"}`);
     }
   };
 
@@ -169,7 +208,8 @@ export function AdminScreen({
             {[
               { id: "stats", label: "Tổng quan thống kê", icon: TrendingUp },
               { id: "c2c", label: "Duyệt bài đăng C2C", icon: Package, badge: pendingProducts.length },
-              { id: "sellers", label: "Duyệt Shop", icon: Users, badge: pendingSellers.length }
+              { id: "sellers", label: "Duyệt Shop", icon: Users, badge: pendingSellers.length },
+              { id: "users", label: "Danh sách tài khoản", icon: Users }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -267,7 +307,15 @@ export function AdminScreen({
                   <div className="space-y-5">
                     <div className="flex justify-between items-center text-xs font-bold" style={ff}>
                       <span className="text-coffee">Tỷ lệ hoa hồng sàn:</span>
-                      <span className="text-amber-700 font-mono text-sm">{commissionRate}%</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-amber-700 font-mono text-sm">{commissionRate}%</span>
+                        <button 
+                          onClick={() => alert("Tính năng cấu hình Platform Fee Config đang được phát triển ở Backend.")}
+                          className="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded transition-colors text-[10px]"
+                        >
+                          Thay đổi
+                        </button>
+                      </div>
                     </div>
                     <div className="w-full h-2.5 rounded-full" style={{ backgroundColor: MUTED }}>
                       <div className="h-full rounded-full" style={{ width: `${(commissionRate / 30) * 100}%`, backgroundColor: T }} />
@@ -410,7 +458,113 @@ export function AdminScreen({
             </div>
           )}
 
-          {/* Users tab removed for MVP */}
+          {/* TAB: USERS */}
+          {activeAdminTab === "users" && (
+            <div className="p-6 rounded-3xl bg-white border border-muted shadow-sm animate-fade-in">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-base font-bold font-serif" style={{ color: ESPRESSO }}>Quản lý Tài khoản</h3>
+                <div className="flex items-center gap-3">
+                  <select
+                    className="text-xs font-bold border border-muted rounded-xl px-4 py-2 bg-gray-50 text-coffee focus:outline-none focus:border-coffee transition-all cursor-pointer"
+                    value={roleFilter}
+                    onChange={(e) => {
+                      setRoleFilter(e.target.value as any);
+                      setUserPage(1); // Reset page on filter
+                    }}
+                  >
+                    <option value="all">Tất cả vai trò</option>
+                    <option value="buyer">Người mua (Buyer)</option>
+                    <option value="seller">Người bán (Seller)</option>
+                  </select>
+                </div>
+              </div>
+
+              {allUsers.length === 0 ? (
+                <div className="text-center py-16 text-coffee" style={ff}>
+                  <p className="text-sm font-bold">Không có tài khoản nào!</p>
+                </div>
+              ) : (
+                <div className="overflow-hidden border border-muted rounded-2xl">
+                  <table className="w-full border-collapse text-left text-xs">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-muted text-coffee font-bold">
+                        <th className="p-4">Tên / Email</th>
+                        <th className="p-4">Vai trò</th>
+                        <th className="p-4">Trạng thái</th>
+                        <th className="p-4 text-center">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-muted bg-white">
+                      {allUsers.map((u) => (
+                        <tr key={u._id || u.id} className="hover:bg-gray-50/55 transition-colors">
+                          <td className="p-4">
+                            <p className="font-bold text-coffee">{u.name}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{u.email}</p>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex gap-1 flex-wrap">
+                              {u.roles?.map((r: string) => (
+                                <span key={r} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded uppercase text-[9px] font-bold">
+                                  {r}
+                               </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            {u.accountStatus === "suspended" ? (
+                              <div>
+                                <span className="text-red-600 font-bold">Đã Khóa</span>
+                                <p className="text-[10px] text-red-500 max-w-[150px] truncate">{u.accountStatusReason}</p>
+                              </div>
+                            ) : (
+                              <span className="text-green-600 font-bold">Đang Hoạt động</span>
+                            )}
+                          </td>
+                          <td className="p-4">
+                            <div className="flex gap-2 justify-center">
+                              <button
+                                onClick={() => handleToggleUserStatus(u._id || u.id, u.accountStatus || "active")}
+                                className={`px-3 py-1.5 rounded-xl text-[10px] font-bold text-white transition-all ${
+                                  u.accountStatus === "suspended" 
+                                    ? "bg-green-600 hover:bg-green-700" 
+                                    : "bg-red-600 hover:bg-red-700"
+                                }`}
+                              >
+                                {u.accountStatus === "suspended" ? "Mở Khóa" : "Khóa TK"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  
+                  {/* Pagination Footer */}
+                  {userTotalPages > 1 && (
+                    <div className="flex items-center justify-between p-4 bg-gray-50 border-t border-muted">
+                      <button
+                        disabled={userPage <= 1}
+                        onClick={() => setUserPage((p) => p - 1)}
+                        className="px-4 py-2 text-xs font-bold bg-white border border-muted rounded-xl text-coffee disabled:opacity-40 transition-all hover:bg-gray-100 disabled:hover:bg-white"
+                      >
+                        Trang trước
+                      </button>
+                      <span className="text-xs font-bold text-espresso">
+                        Trang {userPage} / {userTotalPages}
+                      </span>
+                      <button
+                        disabled={userPage >= userTotalPages}
+                        onClick={() => setUserPage((p) => p + 1)}
+                        className="px-4 py-2 text-xs font-bold bg-white border border-muted rounded-xl text-coffee disabled:opacity-40 transition-all hover:bg-gray-100 disabled:hover:bg-white"
+                      >
+                        Trang tiếp
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
