@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { CheckCircle, Check } from "lucide-react";
 import { T, ESPRESSO, COFFEE, LINEN, CARD, MUTED, SOFT, serif, ff, fmt } from "../../lib/theme";
+import { addressApi } from "../../lib/api";
 import type { Screen, CartGroup, OrderItem } from "../../types";
 
 export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s: Screen) => void; cartGroups: CartGroup[]; updateCart: (cart: CartGroup[]) => void; addOrder: (items: OrderItem[], total: number, payment: string, name?: string, phone?: string, address?: string) => Promise<string | boolean>; }) {
@@ -9,6 +10,31 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [addressError, setAddressError] = useState("");
+  const [prefillTried, setPrefillTried] = useState(false);
+
+  // BE 2026-10-01: pre-fill shipping form from user's default address book.
+  // Soft-fails silently if the user has no saved addresses — manual entry
+  // is still the source of truth.
+  useEffect(() => {
+    if (prefillTried) return;
+    setPrefillTried(true);
+    addressApi
+      .list()
+      .then((res) => {
+        const def = (res.addresses ?? []).find((a) => a.isDefault) ?? (res.addresses ?? [])[0];
+        if (!def) return;
+        setFullName((v) => v || def.name);
+        setPhone((v) => v || def.phone);
+        setAddress(
+          (v) =>
+            v ||
+            [def.address, def.ward, def.district, def.province]
+              .filter(Boolean)
+              .join(", ")
+        );
+      })
+      .catch(() => {/* best-effort — manual entry stays available */});
+  }, [prefillTried]);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);

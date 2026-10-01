@@ -182,11 +182,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   meta: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '600',
   },
   seller: {
-    fontSize: 10,
+    fontSize: 11,
     color: COFFEE,
     marginTop: 2,
   },

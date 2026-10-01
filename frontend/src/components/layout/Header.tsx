@@ -35,9 +35,9 @@ export function Header({
     <header className="sticky top-0 z-50 w-full shadow-sm" style={{ backgroundColor: COFFEE }}>
       <div className="max-w-[1440px] mx-auto px-4 md:px-8 flex flex-wrap md:flex-nowrap items-center justify-between gap-4 md:gap-6 py-3 md:py-0 md:h-14">
         {/* Logo */}
-        <button onClick={() => go("home")} className="flex items-center gap-3 flex-shrink-0 group">
-          <ThriftLogo size={32} />
-          <span className="text-lg md:text-xl font-bold italic" style={{ ...ff, color: LINEN, letterSpacing: "-0.3px" }}>
+        <button onClick={() => go("home")} className="flex items-center gap-2 md:gap-3 flex-shrink min-w-0 group">
+          <ThriftLogo className="w-7 h-7 md:w-8 md:h-8" />
+          <span className="text-base md:text-xl font-bold italic truncate" style={{ ...ff, color: LINEN, letterSpacing: "-0.3px" }}>
             thrift it!
           </span>
         </button>
@@ -119,7 +119,7 @@ export function Header({
       </div>
 
       {/* Mobile Search Bar */}
-      <div className="sm:hidden px-4 pb-4">
+      <div className="sm:hidden px-4 pb-3">
         <div
           className="flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all"
           style={{ backgroundColor: "rgba(250,240,230,0.15)", border: "1.5px solid rgba(250,240,230,0.25)" }}
@@ -149,7 +149,7 @@ export function Header({
       {/* Filter tags sub-row */}
       {showTags && (
         <div style={{ backgroundColor: "rgba(0,0,0,0.18)", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <div className="max-w-[1440px] mx-auto px-4 md:px-8 flex items-center gap-2 py-2.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          <div className="max-w-[1440px] mx-auto px-4 md:px-8 flex items-center gap-2 py-2 md:py-2.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
             <SlidersHorizontal size={14} style={{ color: MUTED, flexShrink: 0 }} />
             <span className="hidden md:inline text-xs font-semibold mr-1" style={{ color: MUTED, ...ff, flexShrink: 0 }}>
               Bộ lọc nhanh:
@@ -158,7 +158,7 @@ export function Header({
               <button
                 key={tag}
                 onClick={() => onTagChange(tag)}
-                className="flex-shrink-0 px-3.5 py-1 rounded-full text-xs font-semibold border transition-all hover:opacity-90"
+                className="flex-shrink-0 px-3 md:px-3.5 py-0.5 md:py-1 rounded-full text-xs font-semibold border transition-all hover:opacity-90 whitespace-nowrap"
                 style={{
                   backgroundColor: activeTag === tag ? T : "rgba(250,240,230,0.12)",
                   color: activeTag === tag ? LINEN : "rgba(250,240,230,0.8)",

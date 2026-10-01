@@ -102,13 +102,13 @@ export function ProductDetailScreen({
   return (
     <div className="min-h-screen" style={{ backgroundColor: LINEN }}>
       {/* Breadcrumb */}
-      <div className="px-8 py-4" style={{ backgroundColor: SOFT }}>
+      <div className="px-4 md:px-8 py-4" style={{ backgroundColor: SOFT }}>
         <div className="max-w-[1440px] mx-auto flex items-center gap-2 text-sm" style={{ color: COFFEE, ...ff }}>
           <button onClick={() => go("home")} className="hover:text-amber-700 transition-colors">Trang chủ</button>
           <ChevronRight size={14} />
           <button onClick={() => go("search")} className="hover:text-amber-700 transition-colors">{product.category || "Sản phẩm"}</button>
           <ChevronRight size={14} />
-          <span className="font-semibold" style={{ color: ESPRESSO }}>{product.name}</span>
+          <span className="font-semibold truncate" style={{ color: ESPRESSO }}>{product.name}</span>
         </div>
       </div>
 

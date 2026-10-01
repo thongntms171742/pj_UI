@@ -66,3 +66,71 @@
 ### Fixed (in-session hotfix)
 - **`AccountScreen.tsx` ("Xác nhận đã nhận" button, `delivering` tab)**: was calling `PATCH /orders/:code/status` with `status: "DELIVERED"`, which the backend rejected with `ORDER_BUYER_NOT_PARTICIPANT` (buyer can only set `CANCELLED` or `COMPLETED`). Now the button tries `COMPLETED` first; on reject, it walks the state machine `DELIVERED → COMPLETED`. Both attempts surface the backend's exact error message if they fail.
   - Build: `cd frontend && npm run build` → exit 0 (`✓ built in 3.06s`).
+
+## 2026-10-01: BE Address Book integration + buyer state-machine fix
+BE delivered 4 new endpoints for a persistent address book (`GET/POST/PATCH/DELETE /api/users/me/addresses`) and relaxed buyer order-status permissions. The frontend + mobile clients are updated to consume them. (BE lives in a separate repo and does not share this one.)
+
+### Added
+- **`frontend/src/lib/api.ts`** — typed wrapper `addressApi` (`list/create/update/remove`) and types `ApiAddress` / `ApiAddressInput` matching the documented payload (`name`, `phone`, `address`, `ward`, `district`, `province`, `label`, `isDefault`).
+- **`mobile/src/api/endpoints.ts`** — mirror of `addressApi` so the React Native app can call the same 4 endpoints.
+- **`frontend/src/pages/account/AccountScreen.tsx`** — restored the "Sổ địa chỉ" tab (removed in the OpenAPI alignment pass). Includes:
+  - List view with edit/delete / default-toggle actions and "Thêm địa chỉ mới" CTA.
+  - Empty state with MapPin icon and call-to-action.
+  - Add/Edit dialog with phone (`/^(0|\+84)[3|5|7|8|9][0-9]{8}$/`) and address-length (≥ 10 chars) validation, mirroring the P1 form-validation rules.
+  - First address automatically set as default; existing addresses get a "Đặt làm mặc định" inline action.
+- **`frontend/src/pages/payment/PaymentScreen.tsx`** — `useEffect` that pre-fills `fullName` / `phone` / `address` from the user's default address (or first address) on mount. Soft-fails silently; manual entry remains the source of truth.
+
+### Changed
+- **`AccountScreen.tsx` ("Xác nhận đã nhận" button, `delivering` tab)**: removed the `COMPLETED → DELIVERED → COMPLETED` state-machine workaround now that BE permits buyers to set `DELIVERED` directly. Single API call: `PATCH /orders/:code/status { status: "DELIVERED" }`. BE confirmed this fix on 2026-10-01.
+- **`AccountScreen.tsx` main tab list**: added "Sổ địa chỉ" (MapPin icon) for both buyer and seller views so users can manage pickup/shipping addresses from one place.
+
+### Mobile parity
+- `mobile/src/hooks/queries.ts` already accepts `{ status?, category? }` from the previous session — the pre-existing "useProducts hook doesn't accept category yet" TS error no longer reproduces (`npx tsc --noEmit` → exit 0). No code change needed; documented for completeness.
+- Added `addressApi` typed wrapper so a future mobile AddressBook screen can be dropped in without further plumbing.
+
+### Verification
+- `cd frontend && npm run build` → exit 0 (`✓ built in 6.26s`, 1633 modules, 398.22 KB JS).
+- `cd mobile && npx tsc --noEmit` → exit 0 (no errors).
+
+### Known
+- Address book payload contract is inferred from the BE note + the documented fields on `docs/API_CONTRACT.md §13 Users` (not yet updated in this repo since the BE lives in a separate repo). If BE's actual response shape differs (e.g. camelCase keys, or `userId` required in POST body), minor adapter tweaks may be needed once a contract is published here.
+
+## 2026-10-01: Mobile Buyer Flow Audit + Logo Hardening
+Scope: static audit of mobile buyer flow (no browser run). Logo + `thrift it!` italic text pattern is **preserved** — only sizing is tightened on small viewports. Asset URL `https://i.postimg.cc/44tgtTTG/thrift-logo.png` is unchanged.
+
+### Changed
+- **`frontend/src/components/layout/Logo.tsx`**: added optional `className` prop. When provided, the inline `width/height` style is dropped so Tailwind responsive classes win (used by `Header.tsx` for `w-7 h-7 md:w-8 md:h-8`).
+- **`frontend/src/components/layout/Header.tsx`**: logo group uses `flex-shrink min-w-0`, gap reduced `gap-2 md:gap-3`, brand text `text-base md:text-xl truncate`, logo sized via `w-7 h-7 md:w-8 md:h-8`. Prevents header overflow at 360-393px.
+- **`frontend/src/pages/product-detail/ProductDetailScreen.tsx`**: breadcrumb wrapper `px-8` → `px-4 md:px-8`; product-name span gets `truncate` to handle long names without horizontal overflow.
+- **`frontend/src/components/product/ProductCard.tsx`**: condition % and seller text bumped from `text-[10px]` to `text-[11px]` (still `md:text-xs`). Aligns with `[UI_UX_RULES.md §19]` minimum text size.
+- **`frontend/src/pages/cart/CartScreen.tsx`**: qty selector buttons `34x34` → `40x40`, input `38` → `44`. Meets 44px iOS HIG / 48dp Material touch-target minimum.
+- **`frontend/src/pages/search/SearchScreen.tsx`**:
+  - Hide `<FilterSidebar>` on mobile (`hidden lg:block`), add a sticky "Bộ lọc nâng cao" toggle button only visible on mobile with active-filter badge count.
+  - Added a slide-in drawer containing the same `FilterSidebar` + an "Áp dụng" CTA showing the live result count.
+- **`frontend/src/pages/home/HomeScreen.tsx`**: hero `<h2>` gets `max-w-[280px] md:max-w-none` to guarantee a 2-line wrap on small viewports without overflowing.
+
+### Not changed
+- No API or business-logic touch-ups.
+- Logo asset URL, alt text, italic font treatment unchanged everywhere it's used.
+
+### Verification
+- `cd frontend && npm run build` → exit 0 (`✓ built in 6.34s`, 1633 modules, 387 KB JS).
+
+### 2026-10-01 (later) — Mobile (React Native) parity fix
+Scope: mirror the same logo + mobile-buyer fixes into `mobile/` (Expo / RN). The earlier session only edited `frontend/`; this entry covers `mobile/`.
+
+### Changed
+- **`mobile/src/components/ThriftLogo.tsx`**: was a stylised wordmark built from `<View>` shapes (circle + dot) — a placeholder. Now uses `<Image source={{ uri: 'https://i.postimg.cc/44tgtTTG/thrift-logo.png' }}>` so the **brand asset is identical** between web and mobile. Italic `thrift it!` wordmark (via `withText` prop) and accessibility label "thrift it! Logo" preserved.
+- **`mobile/src/components/ProductCard.tsx`**: `meta` and `seller` text bumped from `fontSize: 10` → `11` to align with minimum text-size rule.
+- **`mobile/src/components/QuantityStepper.tsx`**: default `dim` 36 → 44 (md), 28 → 36 (sm); minWidth of the value cell +4 → +8. Meets iOS HIG 44px touch-target minimum.
+
+### Not changed
+- `mobile/src/screens/home/HomeScreen.tsx` — hero is already 22px with explicit `\n`, no wrap fix needed.
+- `mobile/src/screens/product/ProductDetailScreen.tsx` — uses native-stack `topTitle`, no horizontal breadcrumb, web breadcrumb fix doesn't apply.
+- `mobile/src/screens/search/SearchScreen.tsx` — chips are already `horizontal` `ScrollView`, filter panel toggles inline. No drawer fix needed.
+
+### Verification
+- `cd mobile && npx tsc --noEmit` → **only pre-existing** unrelated error in `SearchScreen.tsx` (`useProducts` hook doesn't accept `category` yet). The 3 files I touched (ThriftLogo, ProductCard, QuantityStepper) have **no new TS errors**.
+
+### Known
+- Mobile `SearchScreen` TS error is pre-existing and out of scope; leave for a follow-up.

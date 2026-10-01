@@ -91,7 +91,7 @@ export function LoginScreen({ navigation }: Props) {
           <Text style={styles.label}>Email</Text>
           <TextInput
             style={[styles.input, error && !email ? styles.inputInvalid : null]}
-            placeholder="ban@email.com"
+            placeholder="your@email.com"
             placeholderTextColor={COFFEE + '88'}
             value={email}
             onChangeText={(v) => {

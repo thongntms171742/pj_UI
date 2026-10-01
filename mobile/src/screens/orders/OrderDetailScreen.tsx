@@ -337,13 +337,6 @@ export function OrderDetailScreen() {
     );
   const canBuyerConfirmReceived =
     isViewerBuyer && (order.status === 'DELIVERING' || order.status === 'DELIVERED');
-  const reviewedKey =
-    order.status === 'COMPLETED' && order.items[0]
-      ? `${order.apiId ?? order.id}_${order.items[0].apiId ?? order.items[0].productApiId}`
-      : undefined;
-  const isAlreadyReviewed = !!reviewedKey && reviewedStore.has(reviewedKey);
-  const canBuyerReview =
-    isViewerBuyer && order.status === 'COMPLETED' && !isAlreadyReviewed;
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
@@ -422,29 +415,39 @@ export function OrderDetailScreen() {
               </TouchableOpacity>
             ) : null}
 
-            {/* Buyer reviews — one button per item in the order */}
-            {canBuyerReview && order.items[0] ? (
-              <TouchableOpacity
-                style={styles.reviewBtn}
-                onPress={() => {
-                  const it = order.items[0];
+            {/* Buyer reviews — one button per item */}
+            {isViewerBuyer && order.status === 'COMPLETED' && order.items[0] ? (
+              <>
+                {order.items.map((it, idx) => {
                   const productId = it.apiId ?? it.productApiId;
-                  if (!productId) {
-                    showToast('Không tìm thấy productId');
-                    return;
-                  }
-                  navigation.navigate('Review', {
-                    orderId: order.apiId ?? order.id,
-                    productId,
-                    productName: it.name,
-                  });
-                }}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.reviewBtnText}>
-                  ⭐ Đánh giá: {order.items[0].name}
-                </Text>
-              </TouchableOpacity>
+                  const itemKey = productId ? `${order.apiId ?? order.id}_${productId}` : undefined;
+                  if (!productId) return null;
+                  const itemReviewed = !!itemKey && reviewedStore.has(itemKey);
+                  if (itemReviewed) return null;
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      style={styles.reviewBtn}
+                      onPress={() => {
+                        if (!productId) {
+                          showToast('Không tìm thấy productId');
+                          return;
+                        }
+                        navigation.navigate('Review', {
+                          orderId: order.apiId ?? order.id,
+                          productId,
+                          productName: it.name,
+                        });
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.reviewBtnText}>
+                        ⭐ Đánh giá: {it.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </>
             ) : null}
 
             {/* Buyer already requested cancel — show info */}

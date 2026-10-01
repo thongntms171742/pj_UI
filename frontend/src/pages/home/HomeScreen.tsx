@@ -106,7 +106,7 @@ export function HomeScreen({ go, products, onLike, onAddToCart, loading, sellerS
             <p className="hidden md:block text-sm font-bold mb-2 uppercase tracking-widest" style={{ color: T, ...ff }}>
               ✦ Bộ sưu tập mới tuần này
             </p>
-            <h2 className="text-[32px] md:text-5xl font-bold leading-[1.15] mb-2 md:mb-4" style={{ ...serif, color: LINEN }}>
+            <h2 className="text-[32px] md:text-5xl font-bold leading-[1.15] mb-2 md:mb-4 max-w-[280px] md:max-w-none" style={{ ...serif, color: LINEN }}>
               Mặc vintage,
               <br />
               sống có tâm 🌿

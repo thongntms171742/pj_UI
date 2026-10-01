@@ -352,9 +352,13 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    backgroundColor: LINEN,
     color: ESPRESSO,
     fontSize: 14,
-    padding: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    height: 36,
   },
   chipRow: {
     paddingHorizontal: 16,
@@ -363,12 +367,14 @@ const styles = StyleSheet.create({
   },
   chip: {
     paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingVertical: 6,
     borderRadius: 999,
     backgroundColor: CARD,
     borderWidth: 1,
     borderColor: MUTED,
     marginRight: 8,
+    minHeight: 28,
+    justifyContent: 'center',
   },
   chipActive: {
     backgroundColor: T,
@@ -378,6 +384,7 @@ const styles = StyleSheet.create({
     color: ESPRESSO,
     fontSize: 12,
     fontWeight: '600',
+    lineHeight: 16,
   },
   chipTextActive: {
     color: '#fff',

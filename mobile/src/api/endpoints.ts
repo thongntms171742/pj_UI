@@ -5,6 +5,42 @@
  */
 import { api, ApiProduct, ApiSeller, ApiCartItem, ApiOrder, ApiNotification, ApiSessionUser } from './client';
 
+// ── Address Book (BE 2026-10-01) ──
+// Mirrors frontend addressApi. Same 4 endpoints —
+// `GET/POST/PATCH/DELETE /api/users/me/addresses`. See
+// docs/API_CONTRACT.md §13 Users for payload contract.
+export type ApiAddress = {
+  id: string;
+  label?: string;
+  name: string;
+  phone: string;
+  address: string;
+  ward?: string;
+  district?: string;
+  province?: string;
+  isDefault?: boolean;
+};
+
+export type ApiAddressInput = {
+  label?: string;
+  name: string;
+  phone: string;
+  address: string;
+  ward?: string;
+  district?: string;
+  province?: string;
+  isDefault?: boolean;
+};
+
+export const addressApi = {
+  list: () => api.get<{ addresses: ApiAddress[] }>('/users/me/addresses'),
+  create: (data: ApiAddressInput) =>
+    api.post<{ address: ApiAddress }>('/users/me/addresses', data),
+  update: (id: string, data: Partial<ApiAddressInput>) =>
+    api.patch<{ address: ApiAddress }>(`/users/me/addresses/${id}`, data),
+  remove: (id: string) => api.delete<{ ok: true }>(`/users/me/addresses/${id}`),
+};
+
 // ── Auth ──
 export const authApi = {
   register: (data: { name: string; email: string; password: string }) =>

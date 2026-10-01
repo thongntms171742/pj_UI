@@ -2,11 +2,13 @@ import React, { useState, useEffect, useCallback } from "react";
 import {
   Clock, Package, Truck, Star, X, Store, Edit3, LogOut, Plus,
   ShoppingBag, MessageCircle, TrendingUp, Heart,
-  Eye, DollarSign, Shield, PlusCircle, ExternalLink, MapPinned
+  Eye, DollarSign, Shield, PlusCircle, ExternalLink, MapPinned,
+  MapPin, Trash2, Save
 } from "lucide-react";
 import { T, ESPRESSO, COFFEE, LINEN, CARD, MUTED, SOFT, serif, ff, fmt } from "../../lib/theme";
 import { getOrderTabStatus } from "../../lib/adapters";
-import { api } from "../../lib/api";
+import { api, addressApi } from "../../lib/api";
+import type { ApiAddress, ApiAddressInput } from "../../lib/api";
 import type { Screen, Order, OrderItem, SellerProduct, Shipment } from "../../types";
 
 // ── Account Screen ──────────────────────────────────────────────────────────────
@@ -183,6 +185,132 @@ export function AccountScreen({
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+
+  // ── Address Book (BE 2026-10-01: GET/POST/PATCH/DELETE /api/users/me/addresses) ──
+  const [addresses, setAddresses] = useState<ApiAddress[]>([]);
+  const [addressesLoading, setAddressesLoading] = useState(false);
+  const [addressDialog, setAddressDialog] = useState<{ open: boolean; editing: ApiAddress | null }>({
+    open: false,
+    editing: null,
+  });
+  const [addressForm, setAddressForm] = useState<ApiAddressInput>({
+    label: "",
+    name: "",
+    phone: "",
+    address: "",
+    ward: "",
+    district: "",
+    province: "",
+    isDefault: false,
+  });
+  const [addressFormError, setAddressFormError] = useState("");
+  const [addressSaving, setAddressSaving] = useState(false);
+
+  const loadAddresses = useCallback(async () => {
+    setAddressesLoading(true);
+    try {
+      const res = await addressApi.list();
+      setAddresses(res.addresses ?? []);
+    } catch {
+      setAddresses([]);
+    } finally {
+      setAddressesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (accountTab === "addresses") {
+      loadAddresses();
+    }
+  }, [accountTab, loadAddresses]);
+
+  const openAddressDialog = (editing: ApiAddress | null = null) => {
+    if (editing) {
+      setAddressForm({
+        label: editing.label ?? "",
+        name: editing.name,
+        phone: editing.phone,
+        address: editing.address,
+        ward: editing.ward ?? "",
+        district: editing.district ?? "",
+        province: editing.province ?? "",
+        isDefault: Boolean(editing.isDefault),
+      });
+    } else {
+      setAddressForm({
+        label: "",
+        name: "",
+        phone: "",
+        address: "",
+        ward: "",
+        district: "",
+        province: "",
+        isDefault: addresses.length === 0, // first address auto-default
+      });
+    }
+    setAddressFormError("");
+    setAddressDialog({ open: true, editing });
+  };
+
+  const closeAddressDialog = () => {
+    if (addressSaving) return;
+    setAddressDialog({ open: false, editing: null });
+    setAddressFormError("");
+  };
+
+  const handleSaveAddress = async () => {
+    setAddressFormError("");
+    if (!addressForm.name.trim()) {
+      setAddressFormError("Vui lòng nhập họ tên");
+      return;
+    }
+    if (!/^(0|\+84)[3|5|7|8|9][0-9]{8}$/.test(addressForm.phone.trim())) {
+      setAddressFormError("Số điện thoại không hợp lệ (VD: 0987654321)");
+      return;
+    }
+    if (addressForm.address.trim().length < 10) {
+      setAddressFormError("Vui lòng nhập địa chỉ chi tiết (ít nhất 10 ký tự)");
+      return;
+    }
+    setAddressSaving(true);
+    try {
+      if (addressDialog.editing) {
+        await addressApi.update(addressDialog.editing.id, addressForm);
+        showToast?.("✓ Đã cập nhật địa chỉ");
+      } else {
+        await addressApi.create(addressForm);
+        showToast?.("✓ Đã thêm địa chỉ mới");
+      }
+      setAddressDialog({ open: false, editing: null });
+      await loadAddresses();
+    } catch (err: any) {
+      setAddressFormError(err?.message || "Lưu địa chỉ thất bại");
+    } finally {
+      setAddressSaving(false);
+    }
+  };
+
+  const handleDeleteAddress = async (addr: ApiAddress) => {
+    if (!confirm(`Bạn có chắc muốn xóa địa chỉ "${addr.address}"?`)) return;
+    try {
+      await addressApi.remove(addr.id);
+      showToast?.("✓ Đã xóa địa chỉ");
+      await loadAddresses();
+    } catch (err: any) {
+      showToast?.(`⚠️ ${err?.message || "Xóa địa chỉ thất bại"}`);
+    }
+  };
+
+  const handleSetDefault = async (addr: ApiAddress) => {
+    if (addr.isDefault) return;
+    try {
+      await addressApi.update(addr.id, { isDefault: true });
+      showToast?.("✓ Đã đặt làm địa chỉ mặc định");
+      await loadAddresses();
+    } catch (err: any) {
+      showToast?.(`⚠️ ${err?.message || "Cập nhật thất bại"}`);
+    }
+  };
 
   const handleSellerUpdateStatus = (orderId: string, nextStatus: Order["status"], skipApi = false) => {
     setSellerOrders((prev) =>
@@ -484,10 +612,150 @@ export function AccountScreen({
     </div>
   ) : null;
 
+  // ── Address Book add/edit dialog ──
+  const addressDialogUI = addressDialog.open ? (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+      onClick={closeAddressDialog}
+    >
+      <div
+        className="rounded-2xl shadow-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
+        style={{ backgroundColor: LINEN }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-bold mb-1" style={{ ...serif, color: ESPRESSO }}>
+          {addressDialog.editing ? "Sửa địa chỉ" : "Thêm địa chỉ mới"}
+        </h3>
+        <p className="text-xs mb-4" style={{ color: COFFEE, ...ff }}>
+          Địa chỉ sẽ được lưu vào sổ địa chỉ của bạn.
+        </p>
+
+        {addressFormError && (
+          <div className="mb-4 p-3 rounded-xl text-xs" style={{ backgroundColor: "#FDEDEC", color: "#E74C3C", ...ff }}>
+            ⚠️ {addressFormError}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: COFFEE, ...ff }}>Nhãn (tuỳ chọn)</label>
+            <input
+              value={addressForm.label ?? ""}
+              onChange={(e) => setAddressForm((f) => ({ ...f, label: e.target.value }))}
+              placeholder="VD: Nhà riêng, Công ty…"
+              className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+              style={{ borderColor: MUTED, backgroundColor: CARD, ...ff }}
+              disabled={addressSaving}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: COFFEE, ...ff }}>Họ và tên *</label>
+            <input
+              value={addressForm.name}
+              onChange={(e) => setAddressForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Nguyễn Văn A"
+              className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+              style={{ borderColor: MUTED, backgroundColor: CARD, ...ff }}
+              disabled={addressSaving}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: COFFEE, ...ff }}>Số điện thoại *</label>
+            <input
+              value={addressForm.phone}
+              onChange={(e) => setAddressForm((f) => ({ ...f, phone: e.target.value }))}
+              placeholder="0987654321"
+              keyboardType="tel"
+              className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+              style={{ borderColor: MUTED, backgroundColor: CARD, ...ff }}
+              disabled={addressSaving}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: COFFEE, ...ff }}>Địa chỉ chi tiết *</label>
+            <textarea
+              value={addressForm.address}
+              onChange={(e) => setAddressForm((f) => ({ ...f, address: e.target.value }))}
+              placeholder="Số nhà, tên đường, phường/xã…"
+              rows={2}
+              className="w-full px-3 py-2 rounded-lg text-sm border outline-none resize-none"
+              style={{ borderColor: MUTED, backgroundColor: CARD, ...ff }}
+              disabled={addressSaving}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: COFFEE, ...ff }}>Phường/Xã</label>
+              <input
+                value={addressForm.ward ?? ""}
+                onChange={(e) => setAddressForm((f) => ({ ...f, ward: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+                style={{ borderColor: MUTED, backgroundColor: CARD, ...ff }}
+                disabled={addressSaving}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: COFFEE, ...ff }}>Quận/Huyện</label>
+              <input
+                value={addressForm.district ?? ""}
+                onChange={(e) => setAddressForm((f) => ({ ...f, district: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+                style={{ borderColor: MUTED, backgroundColor: CARD, ...ff }}
+                disabled={addressSaving}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: COFFEE, ...ff }}>Tỉnh/Thành phố</label>
+            <input
+              value={addressForm.province ?? ""}
+              onChange={(e) => setAddressForm((f) => ({ ...f, province: e.target.value }))}
+              className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+              style={{ borderColor: MUTED, backgroundColor: CARD, ...ff }}
+              disabled={addressSaving}
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm pt-1 cursor-pointer" style={{ color: COFFEE, ...ff }}>
+            <input
+              type="checkbox"
+              checked={Boolean(addressForm.isDefault)}
+              onChange={(e) => setAddressForm((f) => ({ ...f, isDefault: e.target.checked }))}
+              disabled={addressSaving}
+              style={{ accentColor: T }}
+            />
+            Đặt làm địa chỉ mặc định
+          </label>
+        </div>
+
+        <div className="mt-5 flex gap-2 justify-end">
+          <button
+            onClick={closeAddressDialog}
+            disabled={addressSaving}
+            className="px-4 py-2 rounded-xl text-sm font-semibold border"
+            style={{ borderColor: MUTED, color: COFFEE, ...ff }}
+          >
+            Hủy
+          </button>
+          <button
+            onClick={handleSaveAddress}
+            disabled={addressSaving}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: T, color: LINEN, ...ff }}
+          >
+            <Save size={14} />
+            {addressSaving ? "Đang lưu…" : addressDialog.editing ? "Cập nhật" : "Thêm mới"}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: LINEN }}>
       {shipmentDialog}
       {reviewDialog}
+      {addressDialogUI}
       {/* Profile header */}
       <div style={{ background: `linear-gradient(135deg, ${ESPRESSO} 0%, ${COFFEE} 100%)` }}>
         <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8 flex flex-col md:flex-row items-center text-center md:text-left gap-6">
@@ -650,9 +918,11 @@ export function AccountScreen({
           <div className="flex items-center gap-2 mb-6 md:mb-8 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
             {(userRole === "seller" ? [
               { id: "selling", label: "Kinh doanh", icon: TrendingUp },
+              { id: "addresses", label: "Sổ địa chỉ", icon: MapPin },
               { id: "messages", label: "Tin nhắn", icon: MessageCircle, badge: unreadMessages },
             ] : [
               { id: "purchases", label: "Đơn mua", icon: ShoppingBag },
+              { id: "addresses", label: "Sổ địa chỉ", icon: MapPin },
               { id: "messages", label: "Tin nhắn", icon: MessageCircle, badge: unreadMessages },
             ]).map((tab) => (
               <button
@@ -863,29 +1133,21 @@ export function AccountScreen({
                           <>
                             <button
                               onClick={async () => {
-                                // Backend rule: buyer can only set CANCELLED or COMPLETED.
-                                // The state machine must walk SHIPPING/DELIVERING → COMPLETED,
-                                // which may require a DELIVERED hop first. Try direct COMPLETED,
-                                // then DELIVERED → COMPLETED as fallback.
+                                // BE 2026-10-01 fix: buyer is now allowed to set
+                                // DELIVERED (or DISPUTED). Single API call — no
+                                // state-machine walk needed.
                                 const code = order.id || order.apiId;
                                 if (!code) {
                                   showToast?.("⚠️ Thiếu mã đơn hàng.");
                                   return;
                                 }
                                 try {
-                                  await api.patch(`/orders/${code}/status`, { status: "COMPLETED" });
-                                  onUpdateOrderStatus?.(order.id, "COMPLETED", true);
+                                  await api.patch(`/orders/${code}/status`, { status: "DELIVERED" });
+                                  onUpdateOrderStatus?.(order.id, "DELIVERED", true);
                                   showToast?.("✓ Đã xác nhận nhận hàng. Cảm ơn bạn!");
-                                } catch (err1: any) {
-                                  try {
-                                    await api.patch(`/orders/${code}/status`, { status: "DELIVERED" });
-                                    await api.patch(`/orders/${code}/status`, { status: "COMPLETED" });
-                                    onUpdateOrderStatus?.(order.id, "COMPLETED", true);
-                                    showToast?.("✓ Đã xác nhận nhận hàng. Cảm ơn bạn!");
-                                  } catch (err2: any) {
-                                    const msg = err2?.message || err1?.message || "Không thể xác nhận đơn hàng";
-                                    showToast?.(`⚠️ ${msg}`);
-                                  }
+                                } catch (err: any) {
+                                  const msg = err?.message || "Không thể xác nhận đơn hàng";
+                                  showToast?.(`⚠️ ${msg}`);
                                 }
                               }}
                               className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-80"
@@ -1216,10 +1478,121 @@ export function AccountScreen({
             </div>
           )}
 
-          {/* ── TAB: ĐỊA CHỈ — Removed ─────────────────────────────────────────── */}
-          {/* The address book relied on /api/addresses which is not in the OpenAPI spec.
-              Shipping address is captured per-order via PaymentScreen's checkout form.
-              For pickup addresses, sellers now enter them manually in the shipment dialog. */}
+          {/* ── TAB: ĐỊA CHỈ (Address Book — BE 2026-10-01) ─────────────────────── */}
+          {accountTab === "addresses" && (
+            <div>
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-xl font-bold" style={{ ...serif, color: ESPRESSO }}>
+                  Sổ địa chỉ của tôi
+                </h2>
+                <button
+                  onClick={() => openAddressDialog(null)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all hover:opacity-90 shadow-md"
+                  style={{ backgroundColor: T, color: LINEN, ...ff }}
+                >
+                  <Plus size={15} />
+                  Thêm địa chỉ mới
+                </button>
+              </div>
+
+              {addressesLoading ? (
+                <div className="py-16 text-center text-sm" style={{ color: COFFEE }}>
+                  Đang tải địa chỉ…
+                </div>
+              ) : addresses.length === 0 ? (
+                <div className="py-20 flex flex-col items-center gap-4 text-center">
+                  <div className="w-20 h-20 flex items-center justify-center rounded-full" style={{ backgroundColor: MUTED + "22" }}>
+                    <MapPin size={36} style={{ color: COFFEE }} />
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold" style={{ color: ESPRESSO, ...serif }}>
+                      Chưa có địa chỉ nào
+                    </p>
+                    <p className="text-sm mt-1" style={{ color: COFFEE, ...ff }}>
+                      Lưu địa chỉ để dùng lại cho các đơn hàng sau, không phải nhập lại mỗi lần.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => openAddressDialog(null)}
+                    className="px-6 py-2.5 rounded-xl font-bold text-sm transition-all hover:opacity-90 shadow-sm"
+                    style={{ backgroundColor: T, color: LINEN, ...ff }}
+                  >
+                    Thêm địa chỉ đầu tiên
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {addresses.map((addr) => (
+                    <div
+                      key={addr.id}
+                      className="p-4 rounded-2xl"
+                      style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <MapPin size={16} style={{ color: T, flexShrink: 0 }} />
+                          {addr.label ? (
+                            <span className="text-sm font-bold truncate" style={{ color: ESPRESSO, ...ff }}>
+                              {addr.label}
+                            </span>
+                          ) : (
+                            <span className="text-sm font-bold truncate" style={{ color: ESPRESSO, ...ff }}>
+                              Địa chỉ
+                            </span>
+                          )}
+                          {addr.isDefault && (
+                            <span
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                              style={{ backgroundColor: T + "22", color: T, ...ff }}
+                            >
+                              Mặc định
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            onClick={() => openAddressDialog(addr)}
+                            className="p-1.5 rounded-lg transition-all hover:opacity-70"
+                            style={{ color: COFFEE }}
+                            title="Sửa"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAddress(addr)}
+                            className="p-1.5 rounded-lg transition-all hover:opacity-70"
+                            style={{ color: "#E74C3C" }}
+                            title="Xóa"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <p className="text-sm font-semibold" style={{ color: ESPRESSO, ...ff }}>
+                        {addr.name} · <span style={{ color: COFFEE }}>{addr.phone}</span>
+                      </p>
+                      <p className="text-xs mt-1 leading-relaxed" style={{ color: COFFEE, ...ff }}>
+                        {[addr.address, addr.ward, addr.district, addr.province]
+                          .filter(Boolean)
+                          .join(", ")}
+                      </p>
+
+                      {!addr.isDefault && (
+                        <button
+                          onClick={() => handleSetDefault(addr)}
+                          className="mt-3 text-xs font-semibold transition-all hover:opacity-80"
+                          style={{ color: T, ...ff }}
+                        >
+                          Đặt làm mặc định
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

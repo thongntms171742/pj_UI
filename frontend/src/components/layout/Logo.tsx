@@ -1,7 +1,20 @@
 import { T } from "../../lib/theme";
 
 // ── Logo ───────────────────────────────────────────────────────────────────────
-export function ThriftLogo({ size = 48 }: { size?: number }) {
+// `size` sets default width/height when no className is given.
+// When `className` is provided, it overrides the inline style so Tailwind
+// responsive classes (e.g. `md:w-8 md:h-8`) win.
+export function ThriftLogo({ size = 48, className }: { size?: number; className?: string }) {
+  if (className) {
+    return (
+      <img
+        src="https://i.postimg.cc/44tgtTTG/thrift-logo.png"
+        alt="thrift it! Logo"
+        className={className}
+        style={{ objectFit: "contain" }}
+      />
+    );
+  }
   return (
     <img
       src="https://i.postimg.cc/44tgtTTG/thrift-logo.png"

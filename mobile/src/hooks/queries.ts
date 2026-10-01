@@ -53,12 +53,12 @@ function useQuery<T>(fetcher: () => Promise<T>, deps: unknown[] = []): QueryStat
 }
 
 // ── Products ──
-export function useProducts(params?: { status?: string }): QueryState<Product[]> {
+export function useProducts(params?: { status?: string; category?: string }): QueryState<Product[]> {
   return useQuery<Product[]>(async () => {
     const res = await productApi.list(params);
     return res.products.map((p) => adaptProduct(p, new Set()));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params?.status]);
+  }, [params?.status, params?.category]);
 }
 
 export function useProduct(id: string | undefined): QueryState<Product> {

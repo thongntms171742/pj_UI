@@ -259,3 +259,43 @@ export type ApiSessionUser = {
   name: string;
   roles: ("buyer" | "seller" | "admin")[];
 };
+
+// ── Address Book (added 2026-10-01 by BE) ──
+// Spec is in `docs/API_CONTRACT.md` §13 Users. Fields below match the
+// payload the BE POST/PATCH endpoint expects. `id` is the server-assigned
+// identifier returned in the list / response; `isDefault` flips when the
+// user marks an address as their default shipping/pickup address.
+export type ApiAddress = {
+  id: string;
+  label?: string;
+  name: string;
+  phone: string;
+  address: string;
+  ward?: string;
+  district?: string;
+  province?: string;
+  isDefault?: boolean;
+};
+
+export type ApiAddressInput = {
+  label?: string;
+  name: string;
+  phone: string;
+  address: string;
+  ward?: string;
+  district?: string;
+  province?: string;
+  isDefault?: boolean;
+};
+
+// ── Address Book endpoints ──
+// BE 2026-10-01 added: full CRUD for the buyer's shipping / pickup
+// address book. See docs/API_CONTRACT.md §13 Users.
+export const addressApi = {
+  list: () => api.get<{ addresses: ApiAddress[] }>("/users/me/addresses"),
+  create: (data: ApiAddressInput) =>
+    api.post<{ address: ApiAddress }>("/users/me/addresses", data),
+  update: (id: string, data: Partial<ApiAddressInput>) =>
+    api.patch<{ address: ApiAddress }>(`/users/me/addresses/${id}`, data),
+  remove: (id: string) => api.delete<{ ok: true }>(`/users/me/addresses/${id}`),
+};

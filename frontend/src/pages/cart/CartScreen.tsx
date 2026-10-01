@@ -306,7 +306,7 @@ export function CartScreen({
                           <button
                             onClick={() => adjustQty(group.seller, item.id, -1)}
                             className="flex items-center justify-center transition-all hover:opacity-70"
-                            style={{ width: 34, height: 34, backgroundColor: SOFT, color: COFFEE }}
+                            style={{ width: 40, height: 40, backgroundColor: SOFT, color: COFFEE }}
                           >
                             <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
                               <path d="M2 6.5h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -315,8 +315,8 @@ export function CartScreen({
                           <span
                             className="flex items-center justify-center text-sm font-bold"
                             style={{
-                              width: 38,
-                              height: 34,
+                              width: 44,
+                              height: 40,
                               color: ESPRESSO,
                               backgroundColor: CARD,
                               borderLeft: `1.5px solid ${MUTED}`,
@@ -330,7 +330,7 @@ export function CartScreen({
                             onClick={() => adjustQty(group.seller, item.id, 1)}
                             disabled={item.qty >= (item.stock || 1)}
                             className="flex items-center justify-center transition-all hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
-                            style={{ width: 34, height: 34, backgroundColor: item.qty >= (item.stock || 1) ? MUTED : T, color: item.qty >= (item.stock || 1) ? COFFEE : LINEN }}
+                            style={{ width: 40, height: 40, backgroundColor: item.qty >= (item.stock || 1) ? MUTED : T, color: item.qty >= (item.stock || 1) ? COFFEE : LINEN }}
                           >
                             <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
                               <path

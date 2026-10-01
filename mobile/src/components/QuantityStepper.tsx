@@ -12,7 +12,8 @@ interface Props {
 }
 
 export function QuantityStepper({ value, min = 1, max, onChange, size = 'md' }: Props) {
-  const dim = size === 'sm' ? 28 : 36;
+  // Touch target minimum is 44 (iOS HIG) / 48 (Material). Keep md ≥ 44, sm ≥ 36.
+  const dim = size === 'sm' ? 36 : 44;
   const dec = () => onChange(Math.max(min, value - 1));
   const inc = () => onChange(Math.min(max ?? Infinity, value + 1));
   const disabledDec = value <= min;
@@ -39,7 +40,7 @@ export function QuantityStepper({ value, min = 1, max, onChange, size = 'md' }: 
         style={[
           styles.val,
           {
-            minWidth: dim + 4,
+            minWidth: dim + 8,
             height: dim,
             backgroundColor: '#FFF',
             borderColor: MUTED,

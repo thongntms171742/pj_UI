@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
-import { T, ESPRESSO, COFFEE, serif } from '../theme/colors';
+import { Image, Text, View, StyleSheet, ViewStyle, ImageStyle } from 'react-native';
+import { ESPRESSO, serif } from '../theme/colors';
 
 interface Props {
   size?: number;
@@ -10,40 +10,29 @@ interface Props {
 }
 
 /**
- * ThriftLogo — recreated as a stylised SVG-free wordmark using View shapes.
- * The web app uses a full SVG logo; on mobile we keep it simple (avoid bundling
- * the SVG and let the brand feel carry through the typography + colors).
+ * ThriftLogo — uses the same brand asset as the web app
+ * (https://i.postimg.cc/44tgtTTG/thrift-logo.png) so the logo is identical
+ * across web and mobile. When `withText` is true, the italic "thrift it!"
+ * wordmark is rendered next to the logo to mirror the web pattern.
  */
 export function ThriftLogo({ size = 36, withText = false, style, textColor = ESPRESSO }: Props) {
+  const logoStyle: ImageStyle = {
+    width: size,
+    height: size,
+    resizeMode: 'contain',
+  };
+
   return (
     <View style={[styles.wrap, style]}>
-      <View
-        style={[
-          styles.circle,
-          {
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-            backgroundColor: T,
-            borderColor: ESPRESSO,
-            borderWidth: size * 0.06,
-          },
-        ]}
-      >
-        <View
-          style={[
-            styles.innerDot,
-            {
-              width: size * 0.32,
-              height: size * 0.32,
-              borderRadius: size * 0.16,
-              backgroundColor: ESPRESSO,
-            },
-          ]}
+      <View style={styles.logoWrap}>
+        <Image
+          source={{ uri: 'https://i.postimg.cc/44tgtTTG/thrift-logo.png' }}
+          style={logoStyle}
+          accessibilityLabel="thrift it! Logo"
         />
       </View>
       {withText ? (
-        <Text style={[styles.text, { color: textColor, fontSize: size * 0.55 }, serif]}>
+        <Text style={[styles.text, { color: textColor, fontSize: size * 0.55, marginLeft: 8 }, serif]}>
           thrift it!
         </Text>
       ) : null}
@@ -55,13 +44,10 @@ const styles = StyleSheet.create({
   wrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
-  circle: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  logoWrap: {
+    // explicit wrap so we can rely on flex layout without gap
   },
-  innerDot: {},
   text: {
     fontWeight: '700',
     fontStyle: 'italic',
