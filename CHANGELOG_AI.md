@@ -1,5 +1,22 @@
 # Changelog AI
 
+## 2026-10-01: Mobile Standalone Android APK (ThriftIt Mobile)
+### Added
+- Created `mobile/.env` containing `EXPO_PUBLIC_API_URL=https://thriftit-backend.onrender.com`.
+- Generated native Android project at `mobile/android/` via `npx expo prebuild --platform android --clean`.
+- Added `mobile/android/local.properties` pointing to the local Android SDK (`C:\\Users\\HP\\AppData\\Local\\Android\\sdk`).
+
+### Changed
+- `mobile/.gitignore`: explicitly ignore `.env` so production API URL is not committed.
+- `mobile/android/app/build.gradle`: set `react { debuggableVariants = [] }` so the debug variant also bundles `index.android.bundle` and produces a standalone APK (default skips bundling for `debug`).
+
+### Built
+- `mobile/android/app/build/outputs/apk/debug/app-debug.apk` (~160 MB, 4 architectures).
+- Verified the APK contains `assets/index.android.bundle` (~2.99 MB) and `assets/app.config` — APK runs standalone without Metro bundler.
+
+### Notes
+- User-level `GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx4096m -Xms512m"` initially triggered `Initial heap size set to a larger value than the maximum heap size` during JVM init. Build commands must override it with `Remove-Item env:GRADLE_OPTS; $env:GRADLE_OPTS="-Xmx2048m -Xms256m"` before invoking `gradlew assembleDebug --no-daemon`.
+
 ## 2026-09-30: UI/UX Audit P1 (Form Validation, Timelines, Empty States)
 ### Changed
 - **AccountScreen**: Improved the visual design and UX of empty states for Orders ("Chưa có đơn hàng nào") and Addresses ("Chưa có địa chỉ") with intuitive icons and actionable buttons.
