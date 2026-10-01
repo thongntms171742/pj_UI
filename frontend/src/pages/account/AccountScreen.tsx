@@ -183,6 +183,7 @@ export function AccountScreen({
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [reviewedOrders, setReviewedOrders] = useState<Set<string>>(new Set());
 
   const handleSellerUpdateStatus = (orderId: string, nextStatus: Order["status"], skipApi = false) => {
     setSellerOrders((prev) =>
@@ -315,15 +316,22 @@ export function AccountScreen({
     return badges[status] || badges.pending;
   };
 
-  const getOrderStatusLabel = (status: string) => {
-    const labels: Record<string, string> = {
-      pending: "Chờ thanh toán",
-      shipping: "Đang chuẩn bị hàng",
-      delivering: "Đang giao hàng",
-      review: "Chờ đánh giá",
-      cancelled: "Đã hủy đơn",
+  const statusLabel = (status: string): string => {
+    const m: Record<string, string> = {
+      PENDING_PAYMENT: 'Chờ thanh toán',
+      PAID: 'Đã thanh toán',
+      CONFIRMED: 'Đã xác nhận',
+      PACKING: 'Đang đóng gói',
+      SHIPPING: 'Đang vận chuyển',
+      DELIVERING: 'Đang giao',
+      DELIVERED: 'Đã giao',
+      COMPLETED: 'Hoàn tất',
+      CANCEL_REQUESTED: 'Chờ duyệt hủy',
+      CANCELLED: 'Đã hủy',
+      DISPUTED: 'Tranh chấp',
+      REFUNDED: 'Hoàn tiền',
     };
-    return labels[status] || status;
+    return m[status] ?? status;
   };
 
   const unreadMessages = messages.filter(m => m.unread).length;
@@ -463,6 +471,7 @@ export function AccountScreen({
                   orderId: reviewOrder.id || reviewOrder.apiId,
                 });
                 onUpdateOrderStatus && onUpdateOrderStatus(reviewOrder.id, "COMPLETED", true);
+                setReviewedOrders((prev) => new Set(prev).add(reviewOrder.id));
                 setReviewOrder(null);
                 setReviewComment("");
                 setReviewRating(5);
@@ -727,7 +736,7 @@ export function AccountScreen({
                         </p>
                       )}
                       <span className="inline-block text-xs px-2.5 py-0.5 rounded-full mt-2" style={{ backgroundColor: SOFT, color: COFFEE, ...ff }}>
-                        {getOrderStatusLabel(getOrderTabStatus(order.status))}
+                        {statusLabel(order.status)}
                       </span>
                     </div>
                     
@@ -742,7 +751,7 @@ export function AccountScreen({
                         </p>
                       )}
                       <span className="inline-block text-xs px-2.5 py-0.5 rounded-full mt-2 mb-3" style={{ backgroundColor: SOFT, color: COFFEE, ...ff }}>
-                        {getOrderStatusLabel(getOrderTabStatus(order.status))}
+                        {statusLabel(order.status)}
                       </span>
                     </div>
                     
@@ -843,17 +852,26 @@ export function AccountScreen({
                             })()}
                             <div className="flex gap-2 justify-end flex-wrap mt-1">
                               <button className="text-xs px-3 py-1.5 rounded-lg font-semibold border transition-all hover:opacity-80" style={{ borderColor: MUTED, color: COFFEE, ...ff }}>Xem chi tiết</button>
-                              {order.status !== "CANCELLED" && (
+                              {!["SHIPPING", "DELIVERING", "DELIVERED", "COMPLETED", "CANCEL_REQUESTED", "CANCELLED", "REFUNDED"].includes(order.status) && (
                                 <button
-                                  onClick={() => {
-                                    if (confirm(`Bạn có chắc chắn muốn hủy đơn hàng #${order.id} không?`)) {
-                                      onUpdateOrderStatus && onUpdateOrderStatus(order.id, "CANCELLED");
+                                  onClick={async () => {
+                                    if (confirm(`Bạn có chắc chắn muốn hủy đơn hàng #${order.id} không? Đơn sẽ chờ seller duyệt hủy.`)) {
+                                      try {
+                                        await api.patch(`/orders/${order.id || order.apiId}/status`, { 
+                                          status: "CANCEL_REQUESTED", 
+                                          reason: "Yêu cầu hủy từ buyer" 
+                                        });
+                                        onUpdateOrderStatus && onUpdateOrderStatus(order.id, "CANCEL_REQUESTED", true);
+                                        showToast?.("✓ Đã gửi yêu cầu hủy đến seller");
+                                      } catch (err: any) {
+                                        showToast?.(`⚠️ Thao tác thất bại: ${err.message}`);
+                                      }
                                     }
                                   }}
                                   className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-80"
                                   style={{ backgroundColor: "#FDEDEC", color: "#E74C3C", ...ff }}
                                 >
-                                  Hủy đơn
+                                  Yêu cầu hủy
                                 </button>
                               )}
                             </div>
@@ -861,44 +879,46 @@ export function AccountScreen({
                         )}
                         {getOrderTabStatus(order.status) === "delivering" && (
                           <>
-                            <button
-                              onClick={async () => {
-                                // Backend rule: buyer can only set CANCELLED or COMPLETED.
-                                // The state machine must walk SHIPPING/DELIVERING → COMPLETED,
-                                // which may require a DELIVERED hop first. Try direct COMPLETED,
-                                // then DELIVERED → COMPLETED as fallback.
-                                const code = order.id || order.apiId;
-                                if (!code) {
-                                  showToast?.("⚠️ Thiếu mã đơn hàng.");
-                                  return;
-                                }
-                                try {
-                                  await api.patch(`/orders/${code}/status`, { status: "COMPLETED" });
-                                  onUpdateOrderStatus?.(order.id, "COMPLETED", true);
-                                  showToast?.("✓ Đã xác nhận nhận hàng. Cảm ơn bạn!");
-                                } catch (err1: any) {
+                            {(order.status === "DELIVERING" || order.status === "DELIVERED") && (
+                              <button
+                                onClick={async () => {
+                                  // Backend rule: buyer can only set CANCELLED or COMPLETED.
+                                  // The state machine must walk SHIPPING/DELIVERING → COMPLETED,
+                                  // which may require a DELIVERED hop first. Try direct COMPLETED,
+                                  // then DELIVERED → COMPLETED as fallback.
+                                  const code = order.id || order.apiId;
+                                  if (!code) {
+                                    showToast?.("⚠️ Thiếu mã đơn hàng.");
+                                    return;
+                                  }
                                   try {
-                                    await api.patch(`/orders/${code}/status`, { status: "DELIVERED" });
                                     await api.patch(`/orders/${code}/status`, { status: "COMPLETED" });
                                     onUpdateOrderStatus?.(order.id, "COMPLETED", true);
                                     showToast?.("✓ Đã xác nhận nhận hàng. Cảm ơn bạn!");
-                                  } catch (err2: any) {
-                                    const msg = err2?.message || err1?.message || "Không thể xác nhận đơn hàng";
-                                    showToast?.(`⚠️ ${msg}`);
+                                  } catch (err1: any) {
+                                    try {
+                                      await api.patch(`/orders/${code}/status`, { status: "DELIVERED" });
+                                      await api.patch(`/orders/${code}/status`, { status: "COMPLETED" });
+                                      onUpdateOrderStatus?.(order.id, "COMPLETED", true);
+                                      showToast?.("✓ Đã xác nhận nhận hàng. Cảm ơn bạn!");
+                                    } catch (err2: any) {
+                                      const msg = err2?.message || err1?.message || "Không thể xác nhận đơn hàng";
+                                      showToast?.(`⚠️ ${msg}`);
+                                    }
                                   }
-                                }
-                              }}
-                              className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-80"
-                              style={{ backgroundColor: "#27AE60", color: LINEN, ...ff }}
-                            >
-                              Xác nhận đã nhận
-                            </button>
+                                }}
+                                className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-80"
+                                style={{ backgroundColor: "#27AE60", color: LINEN, ...ff }}
+                              >
+                                Xác nhận đã nhận
+                              </button>
+                            )}
                             <button className="text-xs px-3 py-1.5 rounded-lg font-semibold border transition-all hover:opacity-80" style={{ borderColor: MUTED, color: COFFEE, ...ff }}>Xem chi tiết</button>
                           </>
                         )}
                         {getOrderTabStatus(order.status) === "review" && (
                           <>
-                            {order.status === "DELIVERED" ? (
+                            {order.status === "COMPLETED" && !reviewedOrders.has(order.id) ? (
                               <button
                                 onClick={() => setReviewOrder(order)}
                                 className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-80"
@@ -1023,7 +1043,7 @@ export function AccountScreen({
                           </div>
                           <div className="md:text-right flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-2 mt-2 md:mt-0 pt-2 md:pt-0 border-t md:border-t-0" style={{ borderColor: MUTED }}>
                             <p className="text-sm font-bold" style={{ color: T, ...serif }}>{fmt(order.total)}</p>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: SOFT, color: COFFEE }}>{order.status}</span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: SOFT, color: COFFEE }}>{statusLabel(order.status)}</span>
                             <div className="flex gap-2 flex-wrap justify-end">
                               {(order.status === "CONFIRMED" || order.status === "PAID") && (
                                 <button
@@ -1049,12 +1069,25 @@ export function AccountScreen({
                               {(order.status === "SHIPPING" || order.status === "DELIVERING") && (
                                 <button
                                   onClick={async () => {
-                                    handleSellerUpdateStatus(order.id, order.status === "SHIPPING" ? "DELIVERING" : "DELIVERED", true);
+                                    handleSellerUpdateStatus(order.id, order.status === "SHIPPING" ? "DELIVERING" : "DELIVERED");
                                   }}
                                   className="text-xs px-3 py-1.5 rounded-lg font-semibold border transition-all hover:opacity-80"
                                   style={{ borderColor: "#27AE60", color: "#27AE60", ...ff }}
                                 >
                                   {order.status === "SHIPPING" ? "Cập nhật: Đang đi giao" : "Cập nhật: Đã giao thành công"}
+                                </button>
+                              )}
+                              {order.status === "CANCEL_REQUESTED" && (
+                                <button
+                                  onClick={() => {
+                                    if (confirm(`Chấp nhận yêu cầu hủy đơn hàng #${order.id}?`)) {
+                                      handleSellerUpdateStatus(order.id, "CANCELLED");
+                                    }
+                                  }}
+                                  className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-90"
+                                  style={{ backgroundColor: "#E74C3C", color: LINEN, ...ff }}
+                                >
+                                  Duyệt hủy đơn
                                 </button>
                               )}
                             </div>

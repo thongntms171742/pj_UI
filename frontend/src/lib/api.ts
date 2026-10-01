@@ -227,6 +227,7 @@ export type ApiOrder = {
     | "DELIVERING"
     | "DELIVERED"
     | "COMPLETED"
+    | "CANCEL_REQUESTED"
     | "CANCELLED"
     | "DISPUTED"
     | "REFUNDED";

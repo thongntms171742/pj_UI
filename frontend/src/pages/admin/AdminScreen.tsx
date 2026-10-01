@@ -285,7 +285,7 @@ export function AdminScreen({
                   >
                     <div>
                       <span className="text-xs font-bold text-coffee" style={ff}>{stat.label}</span>
-                      <p className="text-xl font-bold mt-1.5" style={{ ...serif, color: stat.color }}>{stat.value}</p>
+                      <p className="text-xl font-bold mt-1.5" style={{ ...ff, color: stat.color }}>{stat.value}</p>
                       <p className="text-[10px] text-muted-foreground mt-1">{stat.sub}</p>
                     </div>
                     <span className="p-2.5 rounded-xl bg-gray-50 text-gray-500 border border-muted">

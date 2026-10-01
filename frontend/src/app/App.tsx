@@ -458,6 +458,7 @@ export default function App() {
       const res = await api.post<{ product: import("../lib/api").ApiProduct }>("/products", {
         title: newProd.name,
         price: newProd.price,
+        category: newProd.category,
         condition: newProd.condition,
         size: newProd.size,
         quantity: newProd.quantity,

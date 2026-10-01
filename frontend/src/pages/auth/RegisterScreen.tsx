@@ -43,7 +43,7 @@ export function RegisterScreen({ onRegister, onBack }: RegisterScreenProps) {
 
   return (
     <div className="min-h-screen flex" style={{ backgroundColor: LINEN }}>
-      <div className="flex-1 relative overflow-hidden">
+      <div className="hidden lg:block flex-1 relative overflow-hidden">
         <img
           src="https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=900&h=1080&fit=crop&auto=format"
           alt="Vintage clothing collection"
@@ -76,7 +76,7 @@ export function RegisterScreen({ onRegister, onBack }: RegisterScreenProps) {
       </div>
 
       <div
-        className="w-[520px] flex-shrink-0 flex items-center justify-center p-12 overflow-y-auto"
+        className="w-full lg:w-[520px] flex-shrink-0 flex items-center justify-center p-8 md:p-12 overflow-y-auto"
         style={{ backgroundColor: CARD }}
       >
         <div className="w-full max-w-[400px]">
