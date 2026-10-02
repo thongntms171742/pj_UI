@@ -11,7 +11,7 @@ export function Footer({ go }: { go: (s: Screen) => void }) {
   ];
   return (
     <footer style={{ background: `linear-gradient(to bottom, ${ESPRESSO}, #160d08)` }}>
-      <div className="max-w-[1440px] mx-auto px-6 md:px-12 py-16">
+      <div className="w-full px-6 md:px-12 xl:px-16 py-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-10 lg:gap-8">
           <div className="col-span-1 md:col-span-2 lg:col-span-4 lg:pr-12">
             <div className="flex items-center gap-3 mb-4">

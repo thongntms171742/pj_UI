@@ -22,14 +22,18 @@ export interface Product {
   price: number;
   seller: string;
   sellerName?: string;
+  sellerRating?: number;
   condition: number;
   size: string;
   category: string;
   image: string;
+  images?: string[];
   liked: boolean;
   status?: "active" | "pending" | "sold";
   apiId?: string;
   quantity: number;
+  desc?: string;
+  description?: string;
 }
 
 // ── Seller ──────────────────────────────────────────────────────────────────────
@@ -56,6 +60,8 @@ export interface CartItem {
   checked: boolean;
   condition: number;
   stock: number;
+  status?: string;
+  seller?: string;
 }
 
 export interface CartGroup {
@@ -135,6 +141,7 @@ export interface FilterState {
   maxP: string;
   sizes: string[];
   cond: number;
+  rating?: number;
   ai: boolean;
 }
 
@@ -195,15 +202,25 @@ export type ShipmentStatus =
   | "CANCELLED"
   | "FAILED";
 
+// The backend returns embedded Address documents with these fields:
+//   { _id, name, phone, address (full street), province, district, ward, isDefault }
+// After Vietnam's 2-level administrative merger (Tỉnh/Thành -> Xã/Phường),
+// "district" is no longer part of the official hierarchy — we still preserve
+// the field for backward compatibility but it's effectively the same as "ward"
+// in modern addresses.
 export interface Address {
   id: string; // From backend _id
-  label: string;
-  name: string;
+  label?: string; // Optional human label (e.g. "Nhà riêng", "Công ty")
+  name: string; // Receiver full name
   phone: string;
-  province: string;
-  district: string;
-  ward: string;
-  detail: string;
+  province: string; // Tỉnh/Thành phố
+  provinceId?: string; // CAS province code (e.g. "79")
+  ward: string; // Phường/Xã (post-merger, the only sub-province level)
+  wardId?: string; // CAS commune code
+  detail: string; // Số nhà, ngõ, tên đường
+  /** Legacy 3-level field kept for backward compat — same as `ward` after merger. */
+  district?: string;
   isDefault: boolean;
+  /** "delivery" = buyer's address book; "warehouse" = seller's pickup address. */
   type: "delivery" | "warehouse";
 }

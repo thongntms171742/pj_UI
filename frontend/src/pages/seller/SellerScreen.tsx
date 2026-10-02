@@ -4,6 +4,7 @@ import { T, ESPRESSO, COFFEE, LINEN, CARD, MUTED, SOFT, ff, serif } from "../../
 import { ProductCard } from "../../components/product/ProductCard";
 import type { Screen, Product, Seller } from "../../types";
 import { api } from "../../lib/api";
+import { RatingStars } from "../../components/common/RatingStars";
 
 // ── Seller Screen ──────────────────────────────────────────────────────────────
 export function SellerScreen({ seller, go, products, onAddToCart }: { seller: Seller; go: (s: Screen, p?: Product, se?: Seller) => void; products: Product[]; onAddToCart: (product: Product) => void }) {
@@ -17,11 +18,17 @@ export function SellerScreen({ seller, go, products, onAddToCart }: { seller: Se
       .catch(() => {});
   }, [seller.handle]);
 
+  const effectiveTransactions = Math.max(seller.transactions || 0, reviews.length);
+  const effectiveRating =
+    reviews.length > 0
+      ? reviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0) / reviews.length
+      : seller.rating;
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: LINEN }}>
       {/* Seller header */}
       <div style={{ background: `linear-gradient(135deg, ${ESPRESSO} 0%, ${COFFEE} 100%)` }}>
-        <div className="max-w-[1440px] mx-auto px-8 py-10">
+        <div className="w-full px-4 md:px-8 xl:px-10 py-10">
           <div className="flex items-center gap-6">
             <img src={seller.avatar} alt={seller.name} className="w-28 h-28 rounded-full object-cover border-4" style={{ borderColor: T }} />
             <div className="flex-1">
@@ -29,17 +36,15 @@ export function SellerScreen({ seller, go, products, onAddToCart }: { seller: Se
               <p className="text-lg mt-1" style={{ color: MUTED, ...ff }}>@{seller.handle}</p>
               <div className="flex items-center gap-6 mt-4">
                 <div className="flex items-center gap-1.5">
-                  <div className="flex">
-                    {[1,2,3,4,5].map(i => <Star key={i} size={16} fill={i <= Math.round(seller.rating) ? T : "none"} stroke={i <= Math.round(seller.rating) ? "none" : MUTED} />)}
-                  </div>
-                  <span className="text-lg font-bold" style={{ color: T }}>{seller.rating.toFixed(1)}</span>
-                  <span className="text-sm" style={{ color: MUTED }}>({seller.transactions} giao dịch)</span>
+                  <RatingStars rating={effectiveRating} size={16} />
+                  <span className="text-lg font-bold" style={{ color: T }}>{effectiveRating.toFixed(1)}</span>
+                  <span className="text-sm" style={{ color: MUTED }}>({effectiveTransactions} giao dịch)</span>
                 </div>
                 <div className="h-8 w-px" style={{ backgroundColor: MUTED + "44" }} />
-                {seller.rating >= 4.0 && seller.transactions >= 20 ? (
-                  <span className="text-sm px-3 py-1 rounded-full" style={{ backgroundColor: T + "33", color: T, ...ff }}>Shop uy tín ✓</span>
+                {effectiveRating >= 4.0 && effectiveTransactions >= 5 ? (
+                  <span className="text-sm px-3 py-1 rounded-full font-semibold" style={{ backgroundColor: T + "33", color: T, ...ff }}>Shop uy tín ✓</span>
                 ) : (
-                  <span className="text-sm px-3 py-1 rounded-full" style={{ backgroundColor: MUTED + "22", color: COFFEE, ...ff }}>Shop mới</span>
+                  <span className="text-sm px-3 py-1 rounded-full font-semibold" style={{ backgroundColor: MUTED + "33", color: LINEN, ...ff }}>Shop mới</span>
                 )}
               </div>
             </div>
@@ -57,7 +62,7 @@ export function SellerScreen({ seller, go, products, onAddToCart }: { seller: Se
         </div>
       </div>
 
-      <div className="max-w-[1440px] mx-auto px-8 py-8">
+      <div className="w-full px-4 md:px-8 xl:px-10 py-8">
         <div className="flex gap-4 mb-8">
           <button
             onClick={() => setActiveTab("products")}
@@ -84,7 +89,7 @@ export function SellerScreen({ seller, go, products, onAddToCart }: { seller: Se
         </div>
 
         {activeTab === "products" ? (
-          <div className="grid grid-cols-5 gap-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 lg:gap-5">
             {sellerProducts.map((p) => (
               <ProductCard key={p.id} product={p} onLike={() => {}} go={go} onAddToCart={onAddToCart} />
             ))}
@@ -109,11 +114,7 @@ export function SellerScreen({ seller, go, products, onAddToCart }: { seller: Se
                         <h4 className="font-bold text-base" style={{ color: ESPRESSO }}>{review.userName}</h4>
                         <p className="text-xs mt-0.5" style={{ color: MUTED }}>{new Date(review.createdAt).toLocaleDateString("vi-VN")}</p>
                       </div>
-                      <div className="flex text-amber-500">
-                        {[...Array(5)].map((_, i) => (
-                          <Star key={i} size={16} fill={i < review.rating ? "currentColor" : "none"} stroke="currentColor" />
-                        ))}
-                      </div>
+                      <RatingStars rating={review.rating || 5} size={14} />
                     </div>
                     <p className="text-sm mt-3 leading-relaxed" style={{ color: ESPRESSO }}>{review.comment || "Không có bình luận"}</p>
                     <div className="mt-4 p-3 rounded-xl flex gap-3 items-center cursor-pointer transition-all hover:bg-black/5" style={{ backgroundColor: SOFT }} onClick={() => go("product-detail", { id: parseInt(review.productId) || 0 } as any)}>

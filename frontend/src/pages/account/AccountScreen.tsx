@@ -8,6 +8,451 @@ import { T, ESPRESSO, COFFEE, LINEN, CARD, MUTED, SOFT, serif, ff, fmt } from ".
 import { getOrderTabStatus } from "../../lib/adapters";
 import { api } from "../../lib/api";
 import type { Screen, Order, OrderItem, SellerProduct, Shipment } from "../../types";
+import { RatingStars } from "../../components/common/RatingStars";
+import { LetterAvatar, PlaceholderImage } from "../../components/common/LetterAvatar";
+import { ImageOff } from "lucide-react";
+import {
+  AddressBookCard,
+  AddressFormFields,
+  useAddressCatalog,
+} from "../../components/common/AddressBook";
+import type { Address } from "../../types";
+import type { ApiAddress } from "../../lib/api";
+
+// ── AddressBookTab (Buyer — Sổ địa chỉ nhận hàng) ───────────────────────────
+function AddressBookTab({
+  addresses,
+  onAddressesChanged,
+  showToast,
+}: {
+  addresses: Address[];
+  onAddressesChanged?: () => Promise<void> | void;
+  showToast?: (msg: string) => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState({
+    name: "",
+    phone: "",
+    detail: "",
+    provinceId: "",
+    wardId: "",
+    isDefault: false,
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const catalog = useAddressCatalog();
+
+  const resetDraft = () => {
+    setDraft({ name: "", phone: "", detail: "", provinceId: "", wardId: "", isDefault: false });
+    setEditingId(null);
+    setError(null);
+  };
+
+  const startEdit = (a: Address) => {
+    setShowForm(true);
+    setEditingId(a.id);
+    setError(null);
+    // Try to resolve province/ward by name (CAS proxy returns id+name)
+    const province = catalog.provinces.find((p) => p.name === a.province);
+    setDraft({
+      name: a.name,
+      phone: a.phone,
+      detail: a.detail,
+      provinceId: province?.id || "",
+      wardId: "",
+      isDefault: a.isDefault,
+    });
+    // wardId will be auto-resolved once provinces loaded
+    setTimeout(() => {
+      if (province?.id) {
+        const wards = catalog.communesByProvince.get(province.id) || [];
+        const ward = wards.find((w) => w.name === a.ward);
+        if (ward) {
+          setDraft((d) => ({ ...d, wardId: ward.id }));
+        }
+      }
+    }, 200);
+  };
+
+  const handleSubmit = async () => {
+    setError(null);
+    if (!draft.name.trim()) return setError("Vui lòng nhập họ tên");
+    if (!/^\d{10,11}$/.test(draft.phone.trim())) return setError("Số điện thoại phải có 10–11 chữ số");
+    if (!draft.provinceId) return setError("Vui lòng chọn tỉnh/thành");
+    if (!draft.wardId) return setError("Vui lòng chọn phường/xã");
+    if (!draft.detail.trim() || draft.detail.trim().length < 3)
+      return setError("Vui lòng nhập số nhà, tên đường");
+
+    const province = catalog.provinces.find((p) => p.id === draft.provinceId);
+    const ward = (catalog.communesByProvince.get(draft.provinceId) || []).find(
+      (w) => w.id === draft.wardId
+    );
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        name: draft.name.trim(),
+        phone: draft.phone.trim(),
+        address: draft.detail.trim(),
+        province: province?.name || "",
+        district: ward?.name || "",
+        ward: ward?.name || "",
+        isDefault: draft.isDefault,
+      };
+      if (editingId) {
+        await api.patch<{ address: ApiAddress }>(`/users/me/addresses/${editingId}`, payload);
+        showToast?.("✓ Đã cập nhật địa chỉ");
+      } else {
+        await api.post<{ address: ApiAddress }>("/users/me/addresses", payload);
+        showToast?.("✓ Đã thêm địa chỉ mới");
+      }
+      await onAddressesChanged?.();
+      resetDraft();
+      setShowForm(false);
+    } catch (e: any) {
+      setError(e?.message || "Không thể lưu địa chỉ");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Xóa địa chỉ này?")) return;
+    try {
+      await api.delete(`/users/me/addresses/${id}`);
+      await onAddressesChanged?.();
+      showToast?.("✓ Đã xóa địa chỉ");
+    } catch (e: any) {
+      showToast?.(`⚠️ ${e?.message || "Lỗi khi xóa"}`);
+    }
+  };
+
+  const handleSetDefault = async (id: string) => {
+    try {
+      await api.patch(`/users/me/addresses/${id}`, { isDefault: true });
+      await onAddressesChanged?.();
+      showToast?.("✓ Đã đặt làm địa chỉ mặc định");
+    } catch (e: any) {
+      showToast?.(`⚠️ ${e?.message || "Lỗi"}`);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="text-xl font-bold" style={{ ...serif, color: ESPRESSO }}>
+            Sổ địa chỉ nhận hàng
+          </h2>
+          <p className="text-xs mt-1" style={{ color: COFFEE, ...ff }}>
+            Quản lý các địa chỉ để giao hàng nhanh khi thanh toán.
+          </p>
+        </div>
+        {!showForm && (
+          <button
+            onClick={() => {
+              resetDraft();
+              setShowForm(true);
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold shadow-xs hover:opacity-90"
+            style={{ backgroundColor: T, color: LINEN, ...ff }}
+          >
+            <Plus size={15} />
+            Thêm địa chỉ
+          </button>
+        )}
+      </div>
+
+      {showForm && (
+        <div
+          className="mb-5 p-5 rounded-2xl border-2"
+          style={{ borderColor: T, backgroundColor: CARD }}
+        >
+          <h3 className="text-sm font-bold mb-3" style={{ color: ESPRESSO, ...ff }}>
+            {editingId ? "Cập nhật địa chỉ" : "Địa chỉ mới"}
+          </h3>
+          <AddressFormFields
+            name={draft.name}
+            phone={draft.phone}
+            detail={draft.detail}
+            provinceId={draft.provinceId}
+            wardId={draft.wardId}
+            isDefault={draft.isDefault}
+            onChange={(next) => setDraft((d) => ({ ...d, ...next }))}
+            provinces={catalog.provinces}
+            communesByProvince={catalog.communesByProvince}
+            loadingProvinces={catalog.loadingProvinces}
+            loadingCommunes={catalog.loadingCommunes}
+            showDefaultToggle={addresses.length > 0}
+          />
+          {error && (
+            <div
+              className="mt-3 p-2.5 rounded-xl text-xs font-semibold"
+              style={{ backgroundColor: "#FDEDEC", color: "#E74C3C", ...ff }}
+            >
+              ⚠️ {error}
+            </div>
+          )}
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <button
+              onClick={() => {
+                resetDraft();
+                setShowForm(false);
+              }}
+              disabled={submitting}
+              className="px-4 py-2 rounded-xl text-sm font-semibold border"
+              style={{ borderColor: MUTED, color: COFFEE, ...ff }}
+            >
+              Huỷ
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="px-5 py-2 rounded-xl text-sm font-bold shadow-sm disabled:opacity-50"
+              style={{ backgroundColor: T, color: LINEN, ...ff }}
+            >
+              {submitting ? "Đang lưu…" : editingId ? "Lưu thay đổi" : "Thêm địa chỉ"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {addresses.map((a) => (
+          <AddressBookCard
+            key={a.id}
+            address={a}
+            onEdit={() => startEdit(a)}
+            onDelete={() => handleDelete(a.id)}
+            onSetDefault={() => handleSetDefault(a.id)}
+          />
+        ))}
+        {addresses.length === 0 && !showForm && (
+          <div
+            className="md:col-span-2 py-12 px-6 rounded-2xl text-center border-2 border-dashed"
+            style={{ backgroundColor: "#FAFAFA", borderColor: MUTED, color: COFFEE }}
+          >
+            <MapPinned size={42} style={{ color: MUTED }} />
+            <p className="text-base font-bold mt-3 mb-1" style={{ color: ESPRESSO, ...ff }}>
+              Bạn chưa có địa chỉ nào
+            </p>
+            <p className="text-xs max-w-md mx-auto">
+              Thêm địa chỉ nhận hàng để checkout nhanh hơn — không cần gõ lại mỗi lần mua sắm.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── WarehouseTab (Seller — Địa chỉ kho lấy hàng) ───────────────────────────
+function WarehouseTab({
+  addresses,
+  onAddressesChanged,
+  showToast,
+}: {
+  addresses: Address[];
+  onAddressesChanged?: () => Promise<void> | void;
+  showToast?: (msg: string) => void;
+}) {
+  // For seller, we surface the FIRST saved address as the pickup default
+  // (consistent with the existing shipment dialog's pickup payload).
+  // They can edit any saved address — the warehouse IS one of those addresses
+  // (created with type=warehouse).
+  const warehouse = addresses.find((a) => a.type === "warehouse") || addresses[0] || null;
+
+  const [showForm, setShowForm] = useState(!warehouse);
+  const [draft, setDraft] = useState({
+    name: "",
+    phone: "",
+    detail: "",
+    provinceId: "",
+    wardId: "",
+    isDefault: false,
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const catalog = useAddressCatalog();
+
+  const startEdit = (a: Address) => {
+    setShowForm(true);
+    setError(null);
+    const province = catalog.provinces.find((p) => p.name === a.province);
+    setDraft({
+      name: a.name,
+      phone: a.phone,
+      detail: a.detail,
+      provinceId: province?.id || "",
+      wardId: "",
+      isDefault: a.isDefault,
+    });
+    setTimeout(() => {
+      if (province?.id) {
+        const wards = catalog.communesByProvince.get(province.id) || [];
+        const ward = wards.find((w) => w.name === a.ward);
+        if (ward) setDraft((d) => ({ ...d, wardId: ward.id }));
+      }
+    }, 200);
+  };
+
+  const handleSave = async () => {
+    setError(null);
+    if (!draft.name.trim()) return setError("Vui lòng nhập tên kho / người bàn giao");
+    if (!/^\d{10,11}$/.test(draft.phone.trim())) return setError("Số điện thoại phải có 10–11 chữ số");
+    if (!draft.provinceId) return setError("Vui lòng chọn tỉnh/thành");
+    if (!draft.wardId) return setError("Vui lòng chọn phường/xã");
+    if (!draft.detail.trim() || draft.detail.trim().length < 3)
+      return setError("Vui lòng nhập số nhà, tên đường");
+
+    const province = catalog.provinces.find((p) => p.id === draft.provinceId);
+    const ward = (catalog.communesByProvince.get(draft.provinceId) || []).find(
+      (w) => w.id === draft.wardId
+    );
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        name: draft.name.trim(),
+        phone: draft.phone.trim(),
+        address: draft.detail.trim(),
+        province: province?.name || "",
+        district: ward?.name || "",
+        ward: ward?.name || "",
+        isDefault: draft.isDefault,
+      };
+      if (warehouse) {
+        await api.patch<{ address: ApiAddress }>(`/users/me/addresses/${warehouse.id}`, payload);
+        showToast?.("✓ Đã cập nhật kho hàng");
+      } else {
+        await api.post<{ address: ApiAddress }>("/users/me/addresses", payload);
+        showToast?.("✓ Đã lưu địa chỉ kho hàng");
+      }
+      await onAddressesChanged?.();
+      setShowForm(false);
+    } catch (e: any) {
+      setError(e?.message || "Không thể lưu kho hàng");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-5">
+        <h2 className="text-xl font-bold" style={{ ...serif, color: ESPRESSO }}>
+          Địa chỉ kho hàng (lấy hàng)
+        </h2>
+        <p className="text-xs mt-1" style={{ color: COFFEE, ...ff }}>
+          Đơn vị vận chuyển sẽ đến địa chỉ này để lấy hàng khi bạn tạo vận đơn.
+          Hệ thống sẽ tự động điền các thông tin này vào form tạo vận đơn.
+        </p>
+      </div>
+
+      {warehouse && !showForm && (
+        <div
+          className="mb-5 p-4 rounded-2xl border-2"
+          style={{ borderColor: T, backgroundColor: `${T}08` }}
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              style={{ backgroundColor: `${T}22`, color: T }}
+            >
+              <MapPinned size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-sm" style={{ color: ESPRESSO, ...ff }}>
+                  {warehouse.name}
+                </span>
+                <span className="text-xs" style={{ color: COFFEE, ...ff }}>
+                  · {warehouse.phone}
+                </span>
+              </div>
+              <p className="text-xs mt-1" style={{ color: COFFEE, ...ff }}>
+                {[warehouse.detail, warehouse.ward, warehouse.province].filter(Boolean).join(", ")}
+              </p>
+              <button
+                onClick={() => startEdit(warehouse)}
+                className="mt-3 inline-flex items-center gap-1 text-xs font-bold hover:opacity-80"
+                style={{ color: T, ...ff }}
+              >
+                <Edit3 size={12} />
+                Cập nhật kho hàng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showForm && (
+        <div
+          className="mb-5 p-5 rounded-2xl border-2"
+          style={{ borderColor: T, backgroundColor: CARD }}
+        >
+          <h3 className="text-sm font-bold mb-3" style={{ color: ESPRESSO, ...ff }}>
+            {warehouse ? "Cập nhật kho hàng" : "Thiết lập kho hàng"}
+          </h3>
+          <AddressFormFields
+            name={draft.name}
+            phone={draft.phone}
+            detail={draft.detail}
+            provinceId={draft.provinceId}
+            wardId={draft.wardId}
+            isDefault={draft.isDefault}
+            onChange={(next) => setDraft((d) => ({ ...d, ...next }))}
+            provinces={catalog.provinces}
+            communesByProvince={catalog.communesByProvince}
+            loadingProvinces={catalog.loadingProvinces}
+            loadingCommunes={catalog.loadingCommunes}
+            showDefaultToggle={false}
+          />
+          {error && (
+            <div
+              className="mt-3 p-2.5 rounded-xl text-xs font-semibold"
+              style={{ backgroundColor: "#FDEDEC", color: "#E74C3C", ...ff }}
+            >
+              ⚠️ {error}
+            </div>
+          )}
+          <div className="mt-4 flex items-center justify-end gap-2">
+            {warehouse && (
+              <button
+                onClick={() => {
+                  setShowForm(false);
+                  setError(null);
+                }}
+                disabled={submitting}
+                className="px-4 py-2 rounded-xl text-sm font-semibold border"
+                style={{ borderColor: MUTED, color: COFFEE, ...ff }}
+              >
+                Huỷ
+              </button>
+            )}
+            <button
+              onClick={handleSave}
+              disabled={submitting}
+              className="px-5 py-2 rounded-xl text-sm font-bold shadow-sm disabled:opacity-50"
+              style={{ backgroundColor: T, color: LINEN, ...ff }}
+            >
+              {submitting ? "Đang lưu…" : warehouse ? "Lưu thay đổi" : "Lưu kho hàng"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div
+        className="p-4 rounded-2xl text-sm"
+        style={{ backgroundColor: SOFT, color: COFFEE, ...ff }}
+      >
+        💡 <strong>Mẹo:</strong> Thông tin tại đây sẽ tự động điền vào hộp thoại
+        "Tạo vận đơn" mỗi khi khách đặt hàng. Bạn chỉ cần xác nhận tạo đơn vận chuyển.
+      </div>
+    </div>
+  );
+}
 
 // ── Account Screen ──────────────────────────────────────────────────────────────
 export function AccountScreen({
@@ -17,6 +462,7 @@ export function AccountScreen({
   userAvatar = "",
   userRating,
   userEmail = "",
+  userHandle = "",
   orders = [],
   myProducts,
   setMyProducts,
@@ -29,6 +475,8 @@ export function AccountScreen({
   showToast,
   onUpdateAvatar,
   defaultTab,
+  addresses = [],
+  onAddressesChanged,
 }: {
   go: (s: Screen) => void;
   onLogout: () => void;
@@ -36,6 +484,7 @@ export function AccountScreen({
   userAvatar?: string;
   userRating?: number;
   userEmail?: string;
+  userHandle?: string;
   orders?: Order[];
   myProducts: SellerProduct[];
   setMyProducts: React.Dispatch<React.SetStateAction<SellerProduct[]>>;
@@ -48,6 +497,8 @@ export function AccountScreen({
   isAdmin?: boolean;
   onUpdateAvatar?: (url: string) => void;
   defaultTab?: string;
+  addresses?: import("../../types").Address[];
+  onAddressesChanged?: () => Promise<void> | void;
 }) {
   const isUserAdmin = Boolean(isAdmin || roles?.includes("admin") || userEmail === "admin@thriftit.vn");
   // ── State quản lý ──────────────────────────────────────────────────────────
@@ -128,7 +579,7 @@ export function AccountScreen({
       setSellerOrders(res.orders.map((o) => ({
         id: o.orderCode,
         apiId: o._id,
-        items: o.items.map((it): OrderItem => ({
+        items: o.items.map((it: any): OrderItem => ({
           id: it.productId,
           name: it.productName,
           price: it.unitPrice,
@@ -136,7 +587,7 @@ export function AccountScreen({
           qty: it.quantity,
           image: it.productImageUrl ?? "",
           condition: it.conditionSnapshot ?? 0,
-          seller: "",
+          seller: it.sellerHandle || (it.sellerId && typeof it.sellerId === "object" ? (it.sellerId.handle || it.sellerId.shopName) : "") || (typeof it.sellerId === "string" ? it.sellerId : "") || it.seller || "",
         })),
         total: o.totalAmount,
         status: o.status as Order["status"],
@@ -160,30 +611,91 @@ export function AccountScreen({
       loadSellerOrders();
       api.get<{ reviews: any[] }>("/sellers/me/reviews")
         .then((res) => setSellerReviews(res.reviews || []))
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [accountTab, loadSellerOrders]);
 
   // ── Seller shipment creation dialog ──
   const [shipDialogOrder, setShipDialogOrder] = useState<Order | null>(null);
+  // Compute warehouse (pickup) address from saved addresses — surfaces the
+  // first saved address as the pickup default (consistent with WarehouseTab).
+  const warehousePickup: Address | null =
+    addresses.find((a) => a.type === "warehouse") || addresses[0] || null;
   const [shipDialogPickup, setShipDialogPickup] = useState({
-    name: "Cửa hàng của tôi",
-    phone: "0909000000",
-    address: "",
-    province: "TP. Hồ Chí Minh",
-    district: "",
-    ward: "",
+    name: warehousePickup?.name || "",
+    phone: warehousePickup?.phone || "",
+    address: warehousePickup?.detail || "",
+    province: warehousePickup?.province || "",
+    district: warehousePickup?.ward || "", // legacy 3-level field, mapped to ward
+    ward: warehousePickup?.ward || "",
     email: "",
   });
   const [shipCreating, setShipCreating] = useState(false);
   const [shipError, setShipError] = useState("");
 
+  // When seller opens shipment dialog, refresh the pickup from the latest
+  // warehouse address — so they always see current values without re-typing.
+  useEffect(() => {
+    if (warehousePickup) {
+      setShipDialogPickup({
+        name: warehousePickup.name,
+        phone: warehousePickup.phone,
+        address: warehousePickup.detail,
+        province: warehousePickup.province,
+        district: warehousePickup.ward,
+        ward: warehousePickup.ward,
+        email: "",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shipDialogOrder?.id]);
+
   // ── Review dialog state ──
   const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
-  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewSellerHandle, setReviewSellerHandle] = useState<string>("");
+  const [reviewRating, setReviewRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState<number | null>(null);
   const [reviewComment, setReviewComment] = useState("");
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [reviewedOrders, setReviewedOrders] = useState<Set<string>>(new Set());
+
+  // Resolve shop handle for the item being reviewed
+  useEffect(() => {
+    if (!reviewOrder || !reviewOrder.items || !reviewOrder.items[0]) {
+      setReviewSellerHandle("");
+      return;
+    }
+    const it = reviewOrder.items[0];
+    if (it.seller && it.seller !== reviewOrder.shippingName) {
+      setReviewSellerHandle(it.seller.replace(/^@+/, ""));
+      return;
+    }
+    const pid = it.id;
+    if (pid) {
+      api
+        .get<{ product: any }>(`/products/${pid}`)
+        .then((res) => {
+          const s = res.product?.sellerId;
+          const handle =
+            s?.handle ||
+            (typeof s === "string" ? s : "") ||
+            (typeof res.product?.seller === "string" ? res.product.seller : "") ||
+            s?.shopName;
+          if (handle) {
+            setReviewSellerHandle(handle.replace(/^@+/, ""));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [reviewOrder]);
+
+  const RATING_LABELS: Record<number, string> = {
+    1: "Không hài lòng",
+    2: "Chưa hài lòng",
+    3: "Bình thường",
+    4: "Hài lòng",
+    5: "Rất hài lòng",
+  };
 
   const handleSellerUpdateStatus = (orderId: string, nextStatus: Order["status"], skipApi = false) => {
     setSellerOrders((prev) =>
@@ -257,15 +769,15 @@ export function AccountScreen({
 
   // ── Status badge helpers ──
   const shipmentStatusLabel: Record<string, { label: string; color: string; bg: string }> = {
-    PENDING:    { label: "Chờ tạo vận đơn",  color: "#6B7280", bg: "#F3F4F6" },
-    CREATED:    { label: "Đã tạo vận đơn",   color: T,          bg: T + "18" },
-    PICKED_UP:  { label: "Đã lấy hàng",       color: "#2980B9", bg: "#EBF5FF" },
-    IN_TRANSIT: { label: "Đang vận chuyển",   color: "#2980B9", bg: "#EBF5FF" },
-    DELIVERING: { label: "Đang giao hàng",     color: "#27AE60", bg: "#E9F7EF" },
-    DELIVERED:  { label: "Đã giao hàng",      color: "#27AE60", bg: "#E9F7EF" },
-    RETURNED:   { label: "Hoàn trả",          color: "#E67E22", bg: "#FEF9E7" },
-    CANCELLED:  { label: "Đã hủy vận đơn",   color: "#E74C3C", bg: "#FDEDEC" },
-    FAILED:     { label: "Lỗi vận đơn",      color: "#E74C3C", bg: "#FDEDEC" },
+    PENDING: { label: "Chờ tạo vận đơn", color: "#6B7280", bg: "#F3F4F6" },
+    CREATED: { label: "Đã tạo vận đơn", color: T, bg: T + "18" },
+    PICKED_UP: { label: "Đã lấy hàng", color: "#2980B9", bg: "#EBF5FF" },
+    IN_TRANSIT: { label: "Đang vận chuyển", color: "#2980B9", bg: "#EBF5FF" },
+    DELIVERING: { label: "Đang giao hàng", color: "#27AE60", bg: "#E9F7EF" },
+    DELIVERED: { label: "Đã giao hàng", color: "#27AE60", bg: "#E9F7EF" },
+    RETURNED: { label: "Hoàn trả", color: "#E67E22", bg: "#FEF9E7" },
+    CANCELLED: { label: "Đã hủy vận đơn", color: "#E74C3C", bg: "#FDEDEC" },
+    FAILED: { label: "Lỗi vận đơn", color: "#E74C3C", bg: "#FDEDEC" },
   };
 
   // ── Tin nhắn từ người mua ─────────────────────────────────────────────────
@@ -351,16 +863,39 @@ export function AccountScreen({
         <h3 className="text-lg font-bold mb-1" style={{ ...serif, color: ESPRESSO }}>
           Tạo vận đơn cho #{shipDialogOrder.id}
         </h3>
-        <p className="text-xs mb-4" style={{ color: COFFEE }}>
+        <p className="text-xs mb-3" style={{ color: COFFEE }}>
           Vận đơn sẽ được gửi đến đơn vị vận chuyển. Bạn không thể sửa sau khi tạo.
         </p>
+
+        {/* Warehouse hint */}
+        {warehousePickup ? (
+          <div
+            className="mb-3 p-2.5 rounded-xl border flex items-center gap-2 text-xs"
+            style={{ borderColor: `${T}40`, backgroundColor: `${T}08`, color: COFFEE, ...ff }}
+          >
+            <MapPinned size={14} style={{ color: T }} />
+            <span>
+              Đang dùng kho hàng đã lưu — có thể chỉnh tay nếu cần.
+            </span>
+          </div>
+        ) : (
+          <div
+            className="mb-3 p-2.5 rounded-xl border text-xs"
+            style={{ borderColor: "#F0AD", backgroundColor: "#FFF9E6", color: "#8A6D3B", ...ff }}
+          >
+            ⚠️ Bạn chưa thiết lập kho hàng. Đi đến tab{" "}
+            <strong>Kho hàng</strong> trong trang Tài khoản để lưu địa chỉ kho
+            một lần — hệ thống sẽ tự động điền cho các vận đơn sau.
+          </div>
+        )}
+
         <div className="space-y-3">
           {[
             { key: "name" as const, label: "Tên cửa hàng" },
             { key: "phone" as const, label: "Số điện thoại" },
-            { key: "address" as const, label: "Địa chỉ lấy hàng" },
+            { key: "address" as const, label: "Địa chỉ lấy hàng (số nhà, đường)" },
+            { key: "ward" as const, label: "Phường/Xã" },
             { key: "province" as const, label: "Tỉnh/Thành" },
-            { key: "district" as const, label: "Quận/Huyện" },
           ].map((field) => (
             <div key={field.key}>
               <label className="text-xs font-semibold" style={{ color: COFFEE, ...ff }}>{field.label}</label>
@@ -390,7 +925,11 @@ export function AccountScreen({
           </button>
           <button
             onClick={handleCreateShipment}
-            disabled={shipCreating || !shipDialogPickup.address || !shipDialogPickup.district}
+            disabled={
+              shipCreating ||
+              !shipDialogPickup.address ||
+              !shipDialogPickup.ward
+            }
             className="px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: T, color: LINEN, ...ff }}
           >
@@ -403,79 +942,189 @@ export function AccountScreen({
 
   const reviewDialog = reviewOrder ? (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
-      onClick={() => !isSubmittingReview && setReviewOrder(null)}
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
+      onClick={() => {
+        if (!isSubmittingReview) {
+          setReviewOrder(null);
+          setHoverRating(null);
+        }
+      }}
     >
       <div
-        className="rounded-2xl shadow-2xl p-6 max-w-md w-full animate-fade-in-down"
-        style={{ backgroundColor: LINEN }}
+        className="rounded-3xl shadow-2xl p-6 sm:p-7 max-w-md w-full border animate-scale-up"
+        style={{ backgroundColor: LINEN, borderColor: `${MUTED}90` }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-bold mb-4" style={{ ...serif, color: ESPRESSO }}>
-          Đánh giá sản phẩm
-        </h3>
-        <div className="flex items-center gap-3 mb-4 p-3 rounded-xl" style={{ backgroundColor: SOFT, border: `1px solid ${MUTED}` }}>
-           <img src={reviewOrder.items[0]?.image} alt="" className="w-12 h-12 rounded-lg object-cover" />
-           <div className="flex-1 min-w-0">
-             <p className="text-sm font-semibold truncate" style={{ color: ESPRESSO }}>{reviewOrder.items[0]?.name}</p>
-             <p className="text-xs" style={{ color: COFFEE }}>Bởi @{reviewOrder.items[0]?.seller}</p>
-           </div>
+        {/* Modal Header */}
+        <div className="flex items-center justify-between pb-3.5 mb-4 border-b" style={{ borderColor: `${MUTED}80` }}>
+          <h3 className="text-xl font-bold tracking-tight" style={{ ...serif, color: ESPRESSO }}>
+            Đánh giá sản phẩm
+          </h3>
+          <button
+            type="button"
+            onClick={() => {
+              if (!isSubmittingReview) {
+                setReviewOrder(null);
+                setHoverRating(null);
+              }
+            }}
+            disabled={isSubmittingReview}
+            className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-200/50 transition-colors cursor-pointer"
+            title="Đóng"
+          >
+            <X size={20} />
+          </button>
         </div>
-        
-        <div className="mb-4">
-          <label className="text-xs font-semibold block mb-2" style={{ color: COFFEE }}>Chất lượng sản phẩm</label>
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <button key={star} onClick={() => setReviewRating(star)}>
-                <Star size={24} fill={star <= reviewRating ? T : "none"} stroke={star <= reviewRating ? T : COFFEE} />
-              </button>
-            ))}
+
+        {/* Product Box */}
+        <div
+          className="flex items-center gap-3.5 mb-5 p-3 rounded-2xl border"
+          style={{ backgroundColor: SOFT, borderColor: MUTED }}
+        >
+          {reviewOrder.items[0]?.image ? (
+            <img
+              src={reviewOrder.items[0].image}
+              alt={reviewOrder.items[0]?.name || "Sản phẩm"}
+              className="w-13 h-13 rounded-xl object-cover border border-white/60 shadow-xs flex-shrink-0"
+            />
+          ) : (
+            <PlaceholderImage
+              width={52}
+              height={52}
+              radius={12}
+              label="Chưa có ảnh"
+              icon={<ImageOff size={20} />}
+            />
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold truncate text-[#3A2312]" style={ff}>
+              {reviewOrder.items[0]?.name || "Sản phẩm vintage"}
+            </p>
+            <p className="text-xs text-[#6F4E37] truncate mt-0.5 font-medium" style={ff}>
+              @{reviewSellerHandle || (reviewOrder.items[0]?.seller && reviewOrder.items[0].seller !== reviewOrder.shippingName ? reviewOrder.items[0].seller.replace(/^@+/, "") : "shop")}
+            </p>
           </div>
         </div>
 
-        <div className="mb-4">
-          <label className="text-xs font-semibold block mb-2" style={{ color: COFFEE }}>Nhận xét chi tiết</label>
-          <textarea
-            value={reviewComment}
-            onChange={(e) => setReviewComment(e.target.value)}
-            placeholder="Hãy chia sẻ cảm nhận của bạn về sản phẩm này nhé..."
-            rows={3}
-            className="w-full px-3 py-2 rounded-lg text-sm border outline-none resize-none"
-            style={{ borderColor: MUTED, backgroundColor: CARD, ...ff }}
-          />
+        {/* Rating Question & Centered Star Selector */}
+        <div className="mb-5 text-center">
+          <label className="text-sm font-bold block mb-2.5" style={{ color: ESPRESSO, ...ff }}>
+            Bạn đánh giá sản phẩm này thế nào?
+          </label>
+          <div className="flex items-center justify-center gap-3 py-1.5">
+            {[1, 2, 3, 4, 5].map((star) => {
+              const activeRating = hoverRating !== null ? hoverRating : reviewRating;
+              const isFilled = star <= activeRating;
+              return (
+                <button
+                  key={star}
+                  type="button"
+                  onMouseEnter={() => setHoverRating(star)}
+                  onMouseLeave={() => setHoverRating(null)}
+                  onClick={() => setReviewRating(star)}
+                  className="transition-transform hover:scale-120 active:scale-95 cursor-pointer p-0.5 focus:outline-none"
+                  title={`${star} ★ - ${RATING_LABELS[star]}`}
+                >
+                  <Star
+                    size={34}
+                    fill={isFilled ? T : "none"}
+                    stroke={isFilled ? T : MUTED}
+                    strokeWidth={1.8}
+                  />
+                </button>
+              );
+            })}
+          </div>
+          <p
+            className="text-sm font-bold mt-2 h-5 transition-colors select-none"
+            style={{
+              color: (hoverRating !== null || reviewRating > 0) ? T : COFFEE,
+              ...ff,
+            }}
+          >
+            {(hoverRating !== null || reviewRating > 0)
+              ? `${hoverRating !== null ? hoverRating : reviewRating} ★  ${RATING_LABELS[hoverRating !== null ? hoverRating : reviewRating]}`
+              : "Chọn mức đánh giá"}
+          </p>
         </div>
 
-        <div className="flex gap-2 justify-end">
+        {/* Review Comment Textarea with Character Counter */}
+        <div className="mb-6">
+          <label className="text-xs font-bold block mb-2" style={{ color: ESPRESSO, ...ff }}>
+            Nhận xét
+          </label>
+          <div className="relative">
+            <textarea
+              value={reviewComment}
+              onChange={(e) => {
+                if (e.target.value.length <= 500) {
+                  setReviewComment(e.target.value);
+                }
+              }}
+              maxLength={500}
+              placeholder="Chia sẻ trải nghiệm của bạn..."
+              rows={4}
+              className="w-full px-3.5 py-3 pb-8 rounded-2xl text-sm border outline-none resize-none transition-all focus:ring-2 focus:ring-amber-500/40"
+              style={{
+                borderColor: MUTED,
+                backgroundColor: "#FFFFFF",
+                color: ESPRESSO,
+                ...ff,
+              }}
+            />
+            <span
+              className="absolute right-3.5 bottom-2.5 text-xs font-medium pointer-events-none select-none"
+              style={{
+                color: reviewComment.length >= 480 ? "#E74C3C" : COFFEE + "99",
+                ...ff,
+              }}
+            >
+              {reviewComment.length}/500
+            </span>
+          </div>
+        </div>
+
+        {/* Modal Buttons */}
+        <div className="flex items-center justify-end gap-3 pt-1">
           <button
-            onClick={() => setReviewOrder(null)}
+            type="button"
+            onClick={() => {
+              setReviewOrder(null);
+              setHoverRating(null);
+            }}
             disabled={isSubmittingReview}
-            className="px-4 py-2 rounded-xl text-sm font-semibold border"
+            className="px-5 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all hover:bg-stone-100 disabled:opacity-50 cursor-pointer"
             style={{ borderColor: MUTED, color: COFFEE, ...ff }}
           >
             Hủy
           </button>
           <button
+            type="button"
             onClick={async () => {
+              if (reviewRating === 0) {
+                showToast?.("⚠️ Vui lòng chọn số sao đánh giá sản phẩm!");
+                return;
+              }
               setIsSubmittingReview(true);
               try {
                 // Ensure order status is COMPLETED per OpenAPI state transition
                 if (reviewOrder.status !== "COMPLETED") {
-                  await api.patch(`/orders/${reviewOrder.id || reviewOrder.apiId}/status`, { status: "COMPLETED" }).catch(() => {});
+                  await api.patch(`/orders/${reviewOrder.id || reviewOrder.apiId}/status`, { status: "COMPLETED" }).catch(() => { });
                 }
-                
+
                 const productId = reviewOrder.items[0]?.productApiId || reviewOrder.items[0]?.apiId || reviewOrder.items[0]?.id;
                 await api.post(`/products/${productId}/reviews`, {
                   rating: reviewRating,
-                  comment: reviewComment || "Đã nhận hàng",
+                  comment: reviewComment || RATING_LABELS[reviewRating] || "Đã nhận hàng",
                   orderId: reviewOrder.id || reviewOrder.apiId,
                 });
                 onUpdateOrderStatus && onUpdateOrderStatus(reviewOrder.id, "COMPLETED", true);
                 setReviewedOrders((prev) => new Set(prev).add(reviewOrder.id));
                 setReviewOrder(null);
                 setReviewComment("");
-                setReviewRating(5);
-                showToast?.("Cảm ơn bạn đã đánh giá!");
+                setReviewRating(0);
+                setHoverRating(null);
+                showToast?.("Cảm ơn bạn đã gửi đánh giá sản phẩm!");
               } catch (err: any) {
                 showToast?.(`⚠️ ${err.message || "Đánh giá thất bại"}`);
               } finally {
@@ -483,7 +1132,7 @@ export function AccountScreen({
               }
             }}
             disabled={isSubmittingReview}
-            className="px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50"
+            className="px-6 py-2.5 rounded-xl text-sm font-bold shadow-md transition-all hover:brightness-105 active:scale-98 disabled:opacity-50 cursor-pointer"
             style={{ backgroundColor: "#27AE60", color: LINEN, ...ff }}
           >
             {isSubmittingReview ? "Đang gửi..." : "Gửi đánh giá"}
@@ -499,17 +1148,29 @@ export function AccountScreen({
       {reviewDialog}
       {/* Profile header */}
       <div style={{ background: `linear-gradient(135deg, ${ESPRESSO} 0%, ${COFFEE} 100%)` }}>
-        <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8 flex flex-col md:flex-row items-center text-center md:text-left gap-6">
+        <div className="w-full px-4 md:px-8 xl:px-10 py-8 flex flex-col md:flex-row items-center text-center md:text-left gap-6">
           <div className="relative group cursor-pointer">
             <label htmlFor="avatar-upload" className="cursor-pointer block">
-              <img
-                src={userAvatar || (isUserAdmin
-                  ? "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=160&h=160&fit=crop&auto=format"
-                  : "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=160&h=160&fit=crop&auto=format")}
-                alt="Avatar"
-                className="w-24 h-24 rounded-full object-cover border-4 shadow-lg transition-all group-hover:opacity-80 mx-auto md:mx-0"
-                style={{ borderColor: T }}
-              />
+              {userAvatar ? (
+                <img
+                  src={userAvatar}
+                  alt="Avatar"
+                  className="w-24 h-24 rounded-full object-cover border-4 shadow-lg transition-all group-hover:opacity-80 mx-auto md:mx-0"
+                  style={{ borderColor: T }}
+                />
+              ) : (
+                <div
+                  className="w-24 h-24 rounded-full flex items-center justify-center border-4 shadow-lg transition-all group-hover:opacity-80 mx-auto md:mx-0 font-bold text-3xl select-none"
+                  style={{
+                    borderColor: T,
+                    backgroundColor: SOFT,
+                    color: ESPRESSO,
+                    ...ff,
+                  }}
+                >
+                  {userName ? userName[0].toUpperCase() : "U"}
+                </div>
+              )}
               {!isUserAdmin && (
                 <div className="absolute inset-0 bg-black/40 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <Edit3 size={20} style={{ color: LINEN }} />
@@ -529,36 +1190,73 @@ export function AccountScreen({
           </div>
           <div className="flex flex-col items-center md:items-start w-full md:w-auto">
             <h2 className="text-2xl font-bold" style={{ ...serif, color: LINEN }}>{userName}</h2>
-            <p className="text-sm mt-0.5" style={{ color: MUTED, ...ff }}>{userEmail}</p>
+            <p className="text-sm mt-0.5" style={{ color: MUTED, ...ff }}>
+              {userRole === "seller" && userHandle ? `@${userHandle}` : userEmail}
+            </p>
             {isUserAdmin ? (
               <div className="flex flex-wrap justify-center md:justify-start items-center gap-5 mt-3">
                 <span className="text-sm px-2.5 py-0.5 rounded-full font-bold bg-amber-500 text-espresso" style={ff}>Hệ thống Admin</span>
               </div>
-            ) : (
+            ) : userRole === "seller" && sellerStatus === "APPROVED" ? (
               <div className="flex flex-wrap justify-center md:justify-start items-center gap-3 md:gap-5 mt-3">
                 <div className="flex items-center gap-1.5">
-                  <div className="flex">
-                    {[1,2,3,4,5].map((i) => (
-                      <Star 
-                        key={i} 
-                        size={13} 
-                        fill={i <= (userRating ?? 5) ? T : "none"} 
-                        stroke={i <= (userRating ?? 5) ? T : MUTED} 
-                      />
-                    ))}
-                  </div>
+                  <RatingStars
+                    rating={
+                      sellerReviews.length > 0
+                        ? sellerReviews.reduce((sum, r) => sum + (Number(r.rating) || 5), 0) / sellerReviews.length
+                        : (userRating ?? 5)
+                    }
+                    size={13}
+                  />
                   <span className="text-sm font-bold" style={{ color: T, ...ff }}>
-                    {(userRating ?? 5).toFixed(1)}
+                    {(sellerReviews.length > 0
+                      ? sellerReviews.reduce((sum, r) => sum + (Number(r.rating) || 5), 0) / sellerReviews.length
+                      : (userRating ?? 5)
+                    ).toFixed(1)}
                   </span>
                 </div>
                 <div className="hidden md:block h-4 w-px" style={{ backgroundColor: MUTED + "66" }} />
-                <span className="text-sm" style={{ color: MUTED, ...ff }}>{sellerStats.soldProducts} giao dịch</span>
+                <span className="text-sm" style={{ color: MUTED, ...ff }}>
+                  {Math.max(sellerStats.soldProducts, sellerOrders.length, sellerReviews.length)} giao dịch
+                </span>
                 <div className="hidden md:block h-4 w-px" style={{ backgroundColor: MUTED + "66" }} />
-                {(userRating ?? 5) >= 4.0 && sellerStats.soldProducts >= 20 ? (
-                  <span className="text-sm px-2.5 py-0.5 rounded-full" style={{ backgroundColor: T + "33", color: T, ...ff }}>Seller uy tín ✓</span>
+                {(sellerReviews.length > 0
+                  ? sellerReviews.reduce((sum, r) => sum + (Number(r.rating) || 5), 0) / sellerReviews.length
+                  : (userRating ?? 5)) >= 4.0 &&
+                Math.max(sellerStats.soldProducts, sellerOrders.length, sellerReviews.length) >= 5 ? (
+                  <span
+                    className="text-xs font-semibold px-2.5 py-0.5 rounded-full border shadow-xs"
+                    style={{ backgroundColor: T + "33", borderColor: T + "66", color: "#FDE68A", ...ff }}
+                  >
+                    Shop uy tín ✓
+                  </span>
                 ) : (
-                  <span className="text-sm px-2.5 py-0.5 rounded-full" style={{ backgroundColor: MUTED + "22", color: COFFEE, ...ff }}>Seller mới</span>
+                  <span
+                    className="text-xs font-semibold px-2.5 py-0.5 rounded-full border shadow-xs"
+                    style={{
+                      backgroundColor: "rgba(255, 255, 255, 0.15)",
+                      borderColor: "rgba(255, 255, 255, 0.3)",
+                      color: "#FFF9F4",
+                      ...ff,
+                    }}
+                  >
+                    Shop mới
+                  </span>
                 )}
+              </div>
+            ) : (
+              <div className="flex flex-wrap justify-center md:justify-start items-center gap-3 mt-2.5">
+                <span
+                  className="text-xs px-3 py-1 rounded-full font-medium border"
+                  style={{
+                    backgroundColor: "rgba(255, 255, 255, 0.12)",
+                    borderColor: "rgba(255, 255, 255, 0.2)",
+                    color: LINEN,
+                    ...ff,
+                  }}
+                >
+                  Tài khoản Người mua
+                </span>
               </div>
             )}
           </div>
@@ -585,20 +1283,33 @@ export function AccountScreen({
                   </button>
                 )}
 
-                <button
-                  onClick={() => {
-                    if (sellerStatus === "APPROVED") go("post");
-                    else if (sellerStatus === "PENDING") go("seller-apply");
-                    else go("seller-apply");
-                  }}
-                  className="flex-1 md:flex-none flex items-center justify-center gap-2.5 px-5 py-3 rounded-xl font-bold text-sm shadow-lg transition-all hover:opacity-90"
-                  style={{ backgroundColor: T, color: LINEN, ...ff }}
-                >
-                  <PlusCircle size={17} />
-                  {sellerStatus === "APPROVED" ? "Đăng bán sản phẩm" 
-                    : sellerStatus === "PENDING" ? "Đang chờ duyệt"
-                    : "Đăng bán cá nhân"}
-                </button>
+                {sellerStatus === "PENDING" ? (
+                  <div
+                    className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-sm border shadow-xs select-none"
+                    style={{
+                      borderColor: "#F59E0B",
+                      backgroundColor: "rgba(245, 158, 11, 0.2)",
+                      color: "#FEF3C7",
+                      ...ff,
+                    }}
+                    title="Hồ sơ người bán của bạn đang được xét duyệt"
+                  >
+                    <Clock size={16} className="text-amber-300" />
+                    <span>Hồ sơ đang chờ duyệt</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (sellerStatus === "APPROVED") go("post");
+                      else go("seller-apply");
+                    }}
+                    className="flex-1 md:flex-none flex items-center justify-center gap-2.5 px-5 py-3 rounded-xl font-bold text-sm shadow-lg transition-all hover:opacity-90 cursor-pointer"
+                    style={{ backgroundColor: T, color: LINEN, ...ff }}
+                  >
+                    <PlusCircle size={17} />
+                    {sellerStatus === "APPROVED" ? "Đăng bán sản phẩm" : "Đăng bán ngay"}
+                  </button>
+                )}
               </>
             ) : (
               <button
@@ -623,7 +1334,7 @@ export function AccountScreen({
       </div>
 
       {isUserAdmin ? (
-        <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-12">
+        <div className="w-full px-4 md:px-8 xl:px-10 py-12">
           <div className="bg-white border border-muted rounded-3xl p-6 md:p-10 text-center shadow-sm max-w-2xl mx-auto animate-fade-in">
             <div className="w-16 h-16 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto mb-6">
               <Shield size={32} />
@@ -654,14 +1365,16 @@ export function AccountScreen({
           </div>
         </div>
       ) : (
-        <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8">
+        <div className="w-full px-4 md:px-8 xl:px-10 py-8">
           {/* Tab điều hướng chính */}
           <div className="flex items-center gap-2 mb-6 md:mb-8 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
             {(userRole === "seller" ? [
               { id: "selling", label: "Kinh doanh", icon: TrendingUp },
+              { id: "warehouse", label: "Kho hàng", icon: MapPinned },
               { id: "messages", label: "Tin nhắn", icon: MessageCircle, badge: unreadMessages },
             ] : [
               { id: "purchases", label: "Đơn mua", icon: ShoppingBag },
+              { id: "addresses", label: "Sổ địa chỉ", icon: MapPinned },
               { id: "messages", label: "Tin nhắn", icon: MessageCircle, badge: unreadMessages },
             ]).map((tab) => (
               <button
@@ -739,7 +1452,7 @@ export function AccountScreen({
                         {statusLabel(order.status)}
                       </span>
                     </div>
-                    
+
                     {/* Mobile details block */}
                     <div className="md:hidden">
                       <p className="text-xs" style={{ color: COFFEE, ...ff }}>
@@ -754,7 +1467,7 @@ export function AccountScreen({
                         {statusLabel(order.status)}
                       </span>
                     </div>
-                    
+
                     <div className="md:text-right flex-shrink-0 mt-3 md:mt-0 pt-3 md:pt-0 border-t md:border-t-0" style={{ borderColor: MUTED }}>
                       <p className="text-base font-bold" style={{ ...serif, color: T }}>{fmt(order.total)}</p>
                       <div className="mt-2 flex gap-2 justify-end flex-wrap">
@@ -857,9 +1570,9 @@ export function AccountScreen({
                                   onClick={async () => {
                                     if (confirm(`Bạn có chắc chắn muốn hủy đơn hàng #${order.id} không? Đơn sẽ chờ seller duyệt hủy.`)) {
                                       try {
-                                        await api.patch(`/orders/${order.id || order.apiId}/status`, { 
-                                          status: "CANCEL_REQUESTED", 
-                                          reason: "Yêu cầu hủy từ buyer" 
+                                        await api.patch(`/orders/${order.id || order.apiId}/status`, {
+                                          status: "CANCEL_REQUESTED",
+                                          reason: "Yêu cầu hủy từ buyer"
                                         });
                                         onUpdateOrderStatus && onUpdateOrderStatus(order.id, "CANCEL_REQUESTED", true);
                                         showToast?.("✓ Đã gửi yêu cầu hủy đến seller");
@@ -920,8 +1633,13 @@ export function AccountScreen({
                           <>
                             {order.status === "COMPLETED" && !reviewedOrders.has(order.id) ? (
                               <button
-                                onClick={() => setReviewOrder(order)}
-                                className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-80"
+                                onClick={() => {
+                                  setReviewOrder(order);
+                                  setReviewRating(0);
+                                  setHoverRating(null);
+                                  setReviewComment("");
+                                }}
+                                className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-80 cursor-pointer"
                                 style={{ backgroundColor: "#27AE60", color: LINEN, ...ff }}
                               >
                                 Đánh giá ngay
@@ -969,11 +1687,30 @@ export function AccountScreen({
                   </div>
                   <button
                     onClick={() => go("seller-apply")}
-                    className="px-6 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md hover:opacity-90"
+                    className="px-6 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md hover:opacity-90 cursor-pointer"
                     style={{ backgroundColor: "#27AE60", color: "#fff", ...ff }}
                   >
                     Đăng ký ngay
                   </button>
+                </div>
+              )}
+
+              {sellerStatus === "PENDING" && (
+                <div
+                  className="mt-8 p-6 rounded-2xl flex items-center gap-4 shadow-sm border"
+                  style={{ backgroundColor: "#FFFBEB", borderColor: "#FDE68A" }}
+                >
+                  <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 text-amber-700">
+                    <Clock size={24} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-base font-bold text-amber-900" style={serif}>
+                      Đơn đăng ký người bán đang chờ phê duyệt
+                    </h3>
+                    <p className="text-xs sm:text-sm text-amber-800/80 mt-1" style={ff}>
+                      Hồ sơ bán hàng của bạn đang được Admin xem xét. Khi được duyệt, bạn sẽ có thể đăng bán sản phẩm và mở gian hàng. Bạn không cần nộp lại đơn.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -981,236 +1718,252 @@ export function AccountScreen({
 
           {/* ── TAB: KINH DOANH (BÁN HÀNG) ───────────────────────────────────── */}
           {accountTab === "selling" && (
-            <div>
-              <h2 className="text-xl font-bold mb-5" style={{ ...serif, color: ESPRESSO }}>Bảng điều khiển kinh doanh</h2>
-              <div className="grid grid-cols-2 gap-4 mb-8">
-                {[
-                  { label: "Sản phẩm đang bán", value: sellerStats.activeProducts, icon: Store, color: "#27AE60" },
-                  { label: "Doanh thu ước tính", value: fmt(sellerStats.estimatedRevenue), icon: DollarSign, color: T },
-                ].map((stat) => (
-                  <div key={stat.label} className="p-4 rounded-2xl" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: stat.color + "18" }}>
-                        <stat.icon size={18} style={{ color: stat.color }} />
-                      </div>
-                      <span className="text-xs font-semibold" style={{ color: COFFEE, ...ff }}>{stat.label}</span>
-                    </div>
-                    <p className="text-2xl font-bold" style={{ ...serif, color: ESPRESSO }}>{stat.value}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* ── Đơn hàng cần xử lý (seller) ── */}
-              <h3 className="text-lg font-bold mb-4" style={{ ...serif, color: ESPRESSO }}>Đơn hàng cần xử lý</h3>
-              {sellerOrdersLoading ? (
-                <div className="p-6 text-center text-sm" style={{ color: COFFEE }}>Đang tải đơn hàng…</div>
-              ) : sellerOrders.filter((o) => ["PAID", "CONFIRMED", "PACKING", "SHIPPING", "DELIVERING"].includes(o.status)).length === 0 ? (
-                <div className="py-12 rounded-2xl flex flex-col items-center justify-center gap-3 mb-8 text-center" style={{ backgroundColor: CARD, border: `1px dashed ${MUTED}` }}>
-                  <Package size={32} style={{ color: MUTED }} />
-                  <div>
-                    <p className="text-sm font-bold" style={{ color: ESPRESSO, ...ff }}>Tất cả đã hoàn tất!</p>
-                    <p className="text-xs mt-1" style={{ color: COFFEE, ...ff }}>Chưa có đơn hàng nào cần bạn xử lý lúc này.</p>
-                  </div>
+            sellerStatus === "PENDING" ? (
+              <div className="p-8 sm:p-12 rounded-3xl bg-white border border-amber-200 text-center shadow-xs">
+                <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto mb-4">
+                  <Clock size={32} />
                 </div>
-              ) : (
-                <div className="space-y-3 mb-8">
-                  {sellerOrders
-                    .filter((o) => ["PAID", "CONFIRMED", "PACKING", "SHIPPING", "DELIVERING"].includes(o.status))
-                    .map((order) => {
-                      const isPacking = order.status === "PACKING";
-                      return (
-                        <div key={order.id} className="flex flex-col md:flex-row md:items-center gap-4 p-4 rounded-2xl" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
-                          <div className="flex gap-4">
-                            <img src={order.items[0]?.image} alt={order.items[0]?.name} className="w-16 h-16 rounded-xl object-cover" />
-                            <div className="flex-1 min-w-0 md:hidden block">
+                <h3 className="text-xl font-bold" style={{ ...serif, color: ESPRESSO }}>
+                  Kênh người bán đang chờ xét duyệt
+                </h3>
+                <p className="text-sm text-stone-600 max-w-md mx-auto mt-2 leading-relaxed" style={ff}>
+                  Hồ sơ mở shop của bạn đang được ban quản trị xét duyệt. Khi được duyệt, bạn sẽ có thể đăng bán sản phẩm và theo dõi doanh thu tại đây.
+                </p>
+                <button
+                  onClick={() => setAccountTab("purchases")}
+                  className="mt-6 px-6 py-2.5 rounded-xl font-bold text-xs text-white shadow-sm hover:opacity-90 cursor-pointer"
+                  style={{ backgroundColor: T, ...ff }}
+                >
+                  Xem đơn mua hàng của tôi
+                </button>
+              </div>
+            ) : (
+              <div>
+                <h2 className="text-xl font-bold mb-5" style={{ ...serif, color: ESPRESSO }}>Bảng điều khiển kinh doanh</h2>
+                <div className="grid grid-cols-2 gap-4 mb-8">
+                  {[
+                    { label: "Sản phẩm đang bán", value: sellerStats.activeProducts, icon: Store, color: "#27AE60" },
+                    { label: "Doanh thu ước tính", value: fmt(sellerStats.estimatedRevenue), icon: DollarSign, color: T },
+                  ].map((stat) => (
+                    <div key={stat.label} className="p-4 rounded-2xl" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: stat.color + "18" }}>
+                          <stat.icon size={18} style={{ color: stat.color }} />
+                        </div>
+                        <span className="text-xs font-semibold" style={{ color: COFFEE, ...ff }}>{stat.label}</span>
+                      </div>
+                      <p className="text-2xl font-bold" style={{ ...serif, color: ESPRESSO }}>{stat.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* ── Đơn hàng cần xử lý (seller) ── */}
+                <h3 className="text-lg font-bold mb-4" style={{ ...serif, color: ESPRESSO }}>Đơn hàng cần xử lý</h3>
+                {sellerOrdersLoading ? (
+                  <div className="p-6 text-center text-sm" style={{ color: COFFEE }}>Đang tải đơn hàng…</div>
+                ) : sellerOrders.filter((o) => ["PAID", "CONFIRMED", "PACKING", "SHIPPING", "DELIVERING"].includes(o.status)).length === 0 ? (
+                  <div className="py-12 rounded-2xl flex flex-col items-center justify-center gap-3 mb-8 text-center" style={{ backgroundColor: CARD, border: `1px dashed ${MUTED}` }}>
+                    <Package size={32} style={{ color: MUTED }} />
+                    <div>
+                      <p className="text-sm font-bold" style={{ color: ESPRESSO, ...ff }}>Tất cả đã hoàn tất!</p>
+                      <p className="text-xs mt-1" style={{ color: COFFEE, ...ff }}>Chưa có đơn hàng nào cần bạn xử lý lúc này.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3 mb-8">
+                    {sellerOrders
+                      .filter((o) => ["PAID", "CONFIRMED", "PACKING", "SHIPPING", "DELIVERING"].includes(o.status))
+                      .map((order) => {
+                        const isPacking = order.status === "PACKING";
+                        return (
+                          <div key={order.id} className="flex flex-col md:flex-row md:items-center gap-4 p-4 rounded-2xl" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
+                            <div className="flex gap-4">
+                              <img src={order.items[0]?.image} alt={order.items[0]?.name} className="w-16 h-16 rounded-xl object-cover" />
+                              <div className="flex-1 min-w-0 md:hidden block">
+                                <p className="text-sm font-semibold" style={{ color: ESPRESSO, ...ff }}>{order.items[0]?.name}</p>
+                                <p className="text-sm font-bold mt-1" style={{ color: T, ...serif }}>{fmt(order.total)}</p>
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-0 hidden md:block">
                               <p className="text-sm font-semibold" style={{ color: ESPRESSO, ...ff }}>{order.items[0]?.name}</p>
-                              <p className="text-sm font-bold mt-1" style={{ color: T, ...serif }}>{fmt(order.total)}</p>
-                            </div>
-                          </div>
-                          <div className="flex-1 min-w-0 hidden md:block">
-                            <p className="text-sm font-semibold" style={{ color: ESPRESSO, ...ff }}>{order.items[0]?.name}</p>
-                            <p className="text-xs" style={{ color: COFFEE, ...ff }}>#{order.id} · {order.createdAt}</p>
-                            {order.shippingAddress && (
-                              <p className="text-[11px] mt-1 italic" style={{ color: COFFEE + "aa", ...ff }}>→ {order.shippingAddress}</p>
-                            )}
-                          </div>
-                          {/* Mobile details */}
-                          <div className="md:hidden">
-                            <p className="text-xs" style={{ color: COFFEE, ...ff }}>#{order.id} · {order.createdAt}</p>
-                            {order.shippingAddress && (
-                              <p className="text-[11px] mt-1 italic" style={{ color: COFFEE + "aa", ...ff }}>→ {order.shippingAddress}</p>
-                            )}
-                          </div>
-                          <div className="md:text-right flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-2 mt-2 md:mt-0 pt-2 md:pt-0 border-t md:border-t-0" style={{ borderColor: MUTED }}>
-                            <p className="text-sm font-bold" style={{ color: T, ...serif }}>{fmt(order.total)}</p>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: SOFT, color: COFFEE }}>{statusLabel(order.status)}</span>
-                            <div className="flex gap-2 flex-wrap justify-end">
-                              {(order.status === "CONFIRMED" || order.status === "PAID") && (
-                                <button
-                                  onClick={() => handleSellerUpdateStatus(order.id, order.status === "PAID" ? "CONFIRMED" : "PACKING")}
-                                  className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-90"
-                                  style={{ backgroundColor: T, color: LINEN, ...ff }}
-                                >
-                                  {order.status === "PAID" ? "Xác nhận đơn" : "Bắt đầu đóng gói"}
-                                </button>
-                              )}
-                              {isPacking && (
-                                <button
-                                  onClick={() => {
-                                    // Open shipment dialog with empty pickup fields — seller fills them in
-                                    setShipDialogOrder(order);
-                                  }}
-                                  className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-90"
-                                  style={{ backgroundColor: T, color: LINEN, ...ff }}
-                                >
-                                  <Truck size={12} className="inline mr-1" /> Tạo vận đơn
-                                </button>
-                              )}
-                              {(order.status === "SHIPPING" || order.status === "DELIVERING") && (
-                                <button
-                                  onClick={async () => {
-                                    handleSellerUpdateStatus(order.id, order.status === "SHIPPING" ? "DELIVERING" : "DELIVERED");
-                                  }}
-                                  className="text-xs px-3 py-1.5 rounded-lg font-semibold border transition-all hover:opacity-80"
-                                  style={{ borderColor: "#27AE60", color: "#27AE60", ...ff }}
-                                >
-                                  {order.status === "SHIPPING" ? "Cập nhật: Đang đi giao" : "Cập nhật: Đã giao thành công"}
-                                </button>
-                              )}
-                              {order.status === "CANCEL_REQUESTED" && (
-                                <button
-                                  onClick={() => {
-                                    if (confirm(`Chấp nhận yêu cầu hủy đơn hàng #${order.id}?`)) {
-                                      handleSellerUpdateStatus(order.id, "CANCELLED");
-                                    }
-                                  }}
-                                  className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-90"
-                                  style={{ backgroundColor: "#E74C3C", color: LINEN, ...ff }}
-                                >
-                                  Duyệt hủy đơn
-                                </button>
+                              <p className="text-xs" style={{ color: COFFEE, ...ff }}>#{order.id} · {order.createdAt}</p>
+                              {order.shippingAddress && (
+                                <p className="text-[11px] mt-1 italic" style={{ color: COFFEE + "aa", ...ff }}>→ {order.shippingAddress}</p>
                               )}
                             </div>
+                            {/* Mobile details */}
+                            <div className="md:hidden">
+                              <p className="text-xs" style={{ color: COFFEE, ...ff }}>#{order.id} · {order.createdAt}</p>
+                              {order.shippingAddress && (
+                                <p className="text-[11px] mt-1 italic" style={{ color: COFFEE + "aa", ...ff }}>→ {order.shippingAddress}</p>
+                              )}
+                            </div>
+                            <div className="md:text-right flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-2 mt-2 md:mt-0 pt-2 md:pt-0 border-t md:border-t-0" style={{ borderColor: MUTED }}>
+                              <p className="text-sm font-bold" style={{ color: T, ...serif }}>{fmt(order.total)}</p>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: SOFT, color: COFFEE }}>{statusLabel(order.status)}</span>
+                              <div className="flex gap-2 flex-wrap justify-end">
+                                {(order.status === "CONFIRMED" || order.status === "PAID") && (
+                                  <button
+                                    onClick={() => handleSellerUpdateStatus(order.id, order.status === "PAID" ? "CONFIRMED" : "PACKING")}
+                                    className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-90"
+                                    style={{ backgroundColor: T, color: LINEN, ...ff }}
+                                  >
+                                    {order.status === "PAID" ? "Xác nhận đơn" : "Bắt đầu đóng gói"}
+                                  </button>
+                                )}
+                                {isPacking && (
+                                  <button
+                                    onClick={() => {
+                                      // Open shipment dialog with empty pickup fields — seller fills them in
+                                      setShipDialogOrder(order);
+                                    }}
+                                    className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-90"
+                                    style={{ backgroundColor: T, color: LINEN, ...ff }}
+                                  >
+                                    <Truck size={12} className="inline mr-1" /> Tạo vận đơn
+                                  </button>
+                                )}
+                                {(order.status === "SHIPPING" || order.status === "DELIVERING") && (
+                                  <button
+                                    onClick={async () => {
+                                      handleSellerUpdateStatus(order.id, order.status === "SHIPPING" ? "DELIVERING" : "DELIVERED");
+                                    }}
+                                    className="text-xs px-3 py-1.5 rounded-lg font-semibold border transition-all hover:opacity-80"
+                                    style={{ borderColor: "#27AE60", color: "#27AE60", ...ff }}
+                                  >
+                                    {order.status === "SHIPPING" ? "Cập nhật: Đang đi giao" : "Cập nhật: Đã giao thành công"}
+                                  </button>
+                                )}
+                                {order.status === "CANCEL_REQUESTED" && (
+                                  <button
+                                    onClick={() => {
+                                      if (confirm(`Chấp nhận yêu cầu hủy đơn hàng #${order.id}?`)) {
+                                        handleSellerUpdateStatus(order.id, "CANCELLED");
+                                      }
+                                    }}
+                                    className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:opacity-90"
+                                    style={{ backgroundColor: "#E74C3C", color: LINEN, ...ff }}
+                                  >
+                                    Duyệt hủy đơn
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold" style={{ ...serif, color: ESPRESSO }}>Quản lý sản phẩm</h3>
+                  <button
+                    onClick={() => go("post")}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all hover:opacity-90"
+                    style={{ backgroundColor: T, color: LINEN, ...ff }}
+                  >
+                    <PlusCircle size={15} />
+                    Đăng sản phẩm mới
+                  </button>
+                </div>
+
+                <div className="flex gap-2 mb-4">
+                  {[
+                    { id: "all" as const, label: "Tất cả", count: sellerStats.totalProducts },
+                    { id: "active" as const, label: "Đang bán", count: sellerStats.activeProducts },
+                    { id: "pending" as const, label: "Chờ duyệt", count: sellerStats.pendingProducts },
+                    { id: "sold" as const, label: "Đã bán", count: sellerStats.soldProducts },
+                    { id: "reviews" as const, label: "Đánh giá", count: sellerReviews.length },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setSellingTab(tab.id)}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold transition-all"
+                      style={{ backgroundColor: sellingTab === tab.id ? COFFEE : SOFT, color: sellingTab === tab.id ? LINEN : COFFEE }}
+                    >
+                      {tab.label} ({tab.count})
+                    </button>
+                  ))}
+                </div>
+
+                {sellingTab === "reviews" ? (
+                  <div className="space-y-4">
+                    {sellerReviews.length === 0 ? (
+                      <div className="p-8 text-center" style={{ color: COFFEE, ...ff }}>
+                        Chưa có đánh giá nào từ khách hàng
+                      </div>
+                    ) : (
+                      sellerReviews.map((review: any) => (
+                        <div key={review.id} className="p-4 rounded-2xl flex gap-4" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
+                          <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center font-bold" style={{ color: COFFEE }}>
+                            {review.userName?.[0]?.toUpperCase()}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h4 className="font-bold text-sm" style={{ color: ESPRESSO }}>{review.userName}</h4>
+                                <p className="text-xs" style={{ color: COFFEE }}>{new Date(review.createdAt).toLocaleDateString("vi-VN")}</p>
+                              </div>
+                              <RatingStars rating={review.rating} size={14} />
+                            </div>
+                            <p className="text-sm mt-2" style={{ color: ESPRESSO }}>{review.comment || "Không có bình luận"}</p>
+                            <div className="mt-3 p-3 rounded-lg flex gap-3 items-center" style={{ backgroundColor: SOFT }}>
+                              <img src={review.productImage} alt={review.productName} className="w-10 h-10 rounded-md object-cover" />
+                              <div>
+                                <p className="text-xs font-semibold" style={{ color: ESPRESSO }}>{review.productName}</p>
+                                <p className="text-[10px]" style={{ color: COFFEE }}>Đơn hàng: #{review.orderId.substring(review.orderId.length - 6)}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredProducts.map((product) => {
+                      const badge = getStatusBadge(product.status);
+                      return (
+                        <div key={product.id} className="flex gap-4 p-4 rounded-2xl transition-all hover:shadow-md" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
+                          <img src={product.image} alt={product.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <h4 className="text-sm font-bold" style={{ color: ESPRESSO, ...ff }}>{product.name}</h4>
+                                <p className="text-lg font-bold mt-1" style={{ ...serif, color: T }}>{fmt(product.price)}</p>
+                                <p className="text-xs mt-1" style={{ color: COFFEE, ...ff }}>Còn lại: {product.quantity} cái · Đăng: {product.createdAt}</p>
+                              </div>
+                              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${badge.bg} ${badge.color}`} style={{ borderColor: "currentColor" }}>{badge.label}</span>
+                            </div>
+                            <div className="flex items-center gap-4 mt-3">
+                              <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: COFFEE, ...ff }}>
+                                <Star size={14} fill={product.avgRating ? "#E8A838" : "none"} stroke={product.avgRating ? "#E8A838" : MUTED} />
+                                {product.avgRating ? (
+                                  <span>{product.avgRating.toFixed(1)} ({product.reviewCount} đánh giá)</span>
+                                ) : (
+                                  <span style={{ color: MUTED }}>Chưa có đánh giá</span>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 flex-shrink-0">
+                            <button onClick={() => go("post")} className="px-3 py-1.5 text-xs rounded-xl border font-semibold transition-all hover:opacity-80" style={{ borderColor: MUTED, color: COFFEE, ...ff }}>Sửa</button>
+                            <button onClick={() => handleArchiveProduct(product)} className="px-3 py-1.5 text-xs rounded-xl font-semibold transition-all hover:opacity-80" style={{ backgroundColor: "#FDEDEC", color: "#E74C3C", ...ff }}>Xóa</button>
                           </div>
                         </div>
                       );
                     })}
-                </div>
-              )}
-
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold" style={{ ...serif, color: ESPRESSO }}>Quản lý sản phẩm</h3>
-                <button
-                  onClick={() => go("post")}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all hover:opacity-90"
-                  style={{ backgroundColor: T, color: LINEN, ...ff }}
-                >
-                  <PlusCircle size={15} />
-                  Đăng sản phẩm mới
-                </button>
-              </div>
-
-              <div className="flex gap-2 mb-4">
-                {[
-                  { id: "all" as const, label: "Tất cả", count: sellerStats.totalProducts },
-                  { id: "active" as const, label: "Đang bán", count: sellerStats.activeProducts },
-                  { id: "pending" as const, label: "Chờ duyệt", count: sellerStats.pendingProducts },
-                  { id: "sold" as const, label: "Đã bán", count: sellerStats.soldProducts },
-                  { id: "reviews" as const, label: "Đánh giá", count: sellerReviews.length },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setSellingTab(tab.id)}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold transition-all"
-                    style={{ backgroundColor: sellingTab === tab.id ? COFFEE : SOFT, color: sellingTab === tab.id ? LINEN : COFFEE }}
-                  >
-                    {tab.label} ({tab.count})
-                  </button>
-                ))}
-              </div>
-
-              {sellingTab === "reviews" ? (
-                <div className="space-y-4">
-                  {sellerReviews.length === 0 ? (
-                    <div className="p-8 text-center" style={{ color: COFFEE, ...ff }}>
-                      Chưa có đánh giá nào từ khách hàng
-                    </div>
-                  ) : (
-                    sellerReviews.map((review: any) => (
-                      <div key={review.id} className="p-4 rounded-2xl flex gap-4" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
-                        <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center font-bold" style={{ color: COFFEE }}>
-                          {review.userName?.[0]?.toUpperCase()}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h4 className="font-bold text-sm" style={{ color: ESPRESSO }}>{review.userName}</h4>
-                              <p className="text-xs" style={{ color: COFFEE }}>{new Date(review.createdAt).toLocaleDateString("vi-VN")}</p>
-                            </div>
-                            <div className="flex text-amber-500">
-                              {[...Array(5)].map((_, i) => (
-                                <Star key={i} size={14} fill={i < review.rating ? "currentColor" : "none"} stroke="currentColor" />
-                              ))}
-                            </div>
-                          </div>
-                          <p className="text-sm mt-2" style={{ color: ESPRESSO }}>{review.comment || "Không có bình luận"}</p>
-                          <div className="mt-3 p-3 rounded-lg flex gap-3 items-center" style={{ backgroundColor: SOFT }}>
-                            <img src={review.productImage} alt={review.productName} className="w-10 h-10 rounded-md object-cover" />
-                            <div>
-                              <p className="text-xs font-semibold" style={{ color: ESPRESSO }}>{review.productName}</p>
-                              <p className="text-[10px]" style={{ color: COFFEE }}>Đơn hàng: #{review.orderId.substring(review.orderId.length - 6)}</p>
-                            </div>
-                          </div>
-                        </div>
+                    {filteredProducts.length === 0 && (
+                      <div className="py-12 flex flex-col items-center gap-3">
+                        <Store size={48} style={{ color: MUTED }} />
+                        <p className="text-base" style={{ color: COFFEE, ...ff }}>Chưa có sản phẩm nào</p>
+                        <button onClick={() => go("post")} className="mt-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all hover:opacity-90" style={{ backgroundColor: T, color: LINEN, ...ff }}>Đăng sản phẩm đầu tiên</button>
                       </div>
-                    ))
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {filteredProducts.map((product) => {
-                    const badge = getStatusBadge(product.status);
-                  return (
-                    <div key={product.id} className="flex gap-4 p-4 rounded-2xl transition-all hover:shadow-md" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
-                      <img src={product.image} alt={product.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <h4 className="text-sm font-bold" style={{ color: ESPRESSO, ...ff }}>{product.name}</h4>
-                            <p className="text-lg font-bold mt-1" style={{ ...serif, color: T }}>{fmt(product.price)}</p>
-                            <p className="text-xs mt-1" style={{ color: COFFEE, ...ff }}>Còn lại: {product.quantity} cái · Đăng: {product.createdAt}</p>
-                          </div>
-                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${badge.bg} ${badge.color}`} style={{ borderColor: "currentColor" }}>{badge.label}</span>
-                        </div>
-                        <div className="flex items-center gap-4 mt-3">
-                          <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: COFFEE, ...ff }}>
-                            <Star size={14} fill={product.avgRating ? "#E8A838" : "none"} stroke={product.avgRating ? "#E8A838" : MUTED} />
-                            {product.avgRating ? (
-                              <span>{product.avgRating.toFixed(1)} ({product.reviewCount} đánh giá)</span>
-                            ) : (
-                              <span style={{ color: MUTED }}>Chưa có đánh giá</span>
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 flex-shrink-0">
-                        <button onClick={() => go("post")} className="px-3 py-1.5 text-xs rounded-xl border font-semibold transition-all hover:opacity-80" style={{ borderColor: MUTED, color: COFFEE, ...ff }}>Sửa</button>
-                        <button onClick={() => handleArchiveProduct(product)} className="px-3 py-1.5 text-xs rounded-xl font-semibold transition-all hover:opacity-80" style={{ backgroundColor: "#FDEDEC", color: "#E74C3C", ...ff }}>Xóa</button>
-                      </div>
-                    </div>
-                  );
-                })}
-                {filteredProducts.length === 0 && (
-                  <div className="py-12 flex flex-col items-center gap-3">
-                    <Store size={48} style={{ color: MUTED }} />
-                    <p className="text-base" style={{ color: COFFEE, ...ff }}>Chưa có sản phẩm nào</p>
-                    <button onClick={() => go("post")} className="mt-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all hover:opacity-90" style={{ backgroundColor: T, color: LINEN, ...ff }}>Đăng sản phẩm đầu tiên</button>
+                    )}
                   </div>
                 )}
               </div>
-              )}
-            </div>
-          )}
+            ))}
 
           {/* ── TAB: TIN NHẮN ─────────────────────────────────────────────────── */}
           {accountTab === "messages" && (
@@ -1249,10 +2002,23 @@ export function AccountScreen({
             </div>
           )}
 
-          {/* ── TAB: ĐỊA CHỈ — Removed ─────────────────────────────────────────── */}
-          {/* The address book relied on /api/addresses which is not in the OpenAPI spec.
-              Shipping address is captured per-order via PaymentScreen's checkout form.
-              For pickup addresses, sellers now enter them manually in the shipment dialog. */}
+          {/* ── TAB: SỔ ĐỊA CHỈ (Buyer) ─────────────────────────────────────────── */}
+          {accountTab === "addresses" && userRole === "buyer" && (
+            <AddressBookTab
+              addresses={addresses}
+              onAddressesChanged={onAddressesChanged}
+              showToast={showToast}
+            />
+          )}
+
+          {/* ── TAB: KHO HÀNG (Seller) ───────────────────────────────────────────── */}
+          {accountTab === "warehouse" && userRole === "seller" && (
+            <WarehouseTab
+              addresses={addresses}
+              onAddressesChanged={onAddressesChanged}
+              showToast={showToast}
+            />
+          )}
         </div>
       )}
 

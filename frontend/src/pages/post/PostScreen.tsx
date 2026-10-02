@@ -5,7 +5,7 @@ import type { Screen } from "../../types";
 import { api } from "../../lib/api";
 
 // ── Post Listing Screen ────────────────────────────────────────────────────────
-export function PostScreen({ go, onAddProduct }: { go: (s: Screen) => void; onAddProduct: (newProd: { name: string; price: number; category: string; desc: string; size: string; condition: number; image: string; quantity: number; }) => void }) {
+export function PostScreen({ go, onAddProduct }: { go: (s: Screen) => void; onAddProduct: (newProd: { name: string; price: number; category: string; desc: string; size: string; condition: number; image: string; images?: string[]; quantity: number; }) => void }) {
   const [dragging, setDragging] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -126,7 +126,7 @@ export function PostScreen({ go, onAddProduct }: { go: (s: Screen) => void; onAd
     <div className="min-h-screen" style={{ backgroundColor: LINEN }}>
       {/* Page header */}
       <div style={{ backgroundColor: COFFEE }}>
-        <div className="max-w-[1440px] mx-auto px-8 py-5 flex items-center gap-4">
+        <div className="w-full px-4 md:px-8 xl:px-10 py-5 flex items-center gap-4">
           <button
             onClick={() => go("account")}
             className="flex items-center gap-2 text-sm font-semibold transition-all hover:opacity-80"
@@ -147,7 +147,7 @@ export function PostScreen({ go, onAddProduct }: { go: (s: Screen) => void; onAd
         </div>
       </div>
 
-      <div className="max-w-[1440px] mx-auto px-8 py-8">
+      <div className="w-full px-4 md:px-8 xl:px-10 py-8">
         <div className="grid grid-cols-[1fr_440px] gap-8">
           {/* Left: Photo upload */}
           <div>
@@ -464,6 +464,7 @@ export function PostScreen({ go, onAddProduct }: { go: (s: Screen) => void; onAd
                           size,
                           condition,
                           image: photos[0],
+                          images: photos,
                           quantity,
                         });
                         setSubmitting(false);

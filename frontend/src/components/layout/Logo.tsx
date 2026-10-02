@@ -16,19 +16,31 @@ export function ThriftLogo({ size = 48 }: { size?: number }) {
 }
 
 // ── Reusable inline check-box matching the brand ──────────────────────────────
-export function BrandCheckbox({ checked, onClick }: { checked: boolean; onClick: () => void }) {
+export function BrandCheckbox({
+  checked,
+  onClick,
+  disabled = false,
+}: {
+  checked: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
     <button
-      onClick={onClick}
-      className="flex-shrink-0 flex items-center justify-center rounded transition-all"
+      type="button"
+      disabled={disabled}
+      onClick={disabled ? undefined : onClick}
+      className={`flex-shrink-0 flex items-center justify-center rounded transition-all ${
+        disabled ? "opacity-35 cursor-not-allowed bg-stone-100" : "cursor-pointer"
+      }`}
       style={{
         width: 20,
         height: 20,
-        border: `2px solid ${checked ? T : "#E8D5BC"}`,
-        backgroundColor: checked ? T : "transparent",
+        border: `2px solid ${disabled ? "#D1D5DB" : checked ? T : "#E8D5BC"}`,
+        backgroundColor: disabled ? "#E5E7EB" : checked ? T : "transparent",
       }}
     >
-      {checked && (
+      {checked && !disabled && (
         <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
           <path d="M1 5.5L4.5 9L10 2" stroke="#FAF0E6" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>

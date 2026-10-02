@@ -55,7 +55,7 @@ export function ChatScreen() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: LINEN }}>
-      <div className="max-w-[1440px] mx-auto px-8 py-6">
+      <div className="w-full px-4 md:px-8 xl:px-10 py-6">
         <h1 className="text-2xl font-bold mb-4" style={{ ...serif, color: ESPRESSO }}>Tin nhắn <span className="text-xs font-mono px-2 py-0.5 rounded bg-amber-100 text-amber-700 ml-2 align-middle">PREVIEW</span></h1>
         <div className="mb-3 px-4 py-2 rounded-xl text-xs flex items-center gap-2"
           style={{ backgroundColor: `${T}15`, border: `1px dashed ${T}55`, color: ESPRESSO, ...ff }}>

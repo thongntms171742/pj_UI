@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Routes, Route, useNavigate, useLocation, useParams, Navigate } from "react-router";
 import { Sparkles } from "lucide-react";
 import {
@@ -12,11 +12,13 @@ import {
 // We intentionally avoid using any mock data for products/cart/orders —
 // those are 100% server-driven now.
 import type {
-  Screen, Product, Seller, CartGroup, Order, OrderItem, SellerProduct, Notification,
+  Screen, Product, Seller, CartGroup, Order, OrderItem, SellerProduct, Notification, Address,
 } from "../types";
+import { adaptAddress } from "../lib/adapters";
+import type { ApiAddress } from "../lib/api";
 import { api, ApiError, setToken } from "../lib/api";
 import {
-  adaptProduct, adaptSeller, adaptOrder, adaptCartItems, adaptNotification, adaptToSellerProduct,
+  adaptProduct, adaptSeller, enrichSellerStats, adaptOrder, adaptCartItems, adaptNotification, adaptToSellerProduct,
 } from "../lib/adapters";
 
 import { Header } from "../components/layout/Header";
@@ -238,10 +240,11 @@ function SellerRouteWrapper({
     setLoading(true);
     api
       .get<{ seller: any }>(`/sellers/${handle}`)
-      .then((res) => {
+      .then(async (res) => {
         const adapted = adaptSeller(res.seller);
-        setSeller(adapted);
-        setSelectedSeller(adapted);
+        const enriched = await enrichSellerStats(adapted);
+        setSeller(enriched);
+        setSelectedSeller(enriched);
       })
       .catch(() => {
         setSeller(null);
@@ -286,11 +289,32 @@ function SellerRouteWrapper({
   );
 }
 
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+const ProtectedRoute = ({
+  children,
+  allowedRoles,
+}: {
+  children: React.ReactNode;
+  allowedRoles?: string[];
+}) => {
   const session = getStoredSession();
   if (!session?.token) {
     return <Navigate to="/login" replace />;
   }
+
+  if (allowedRoles && allowedRoles.length > 0) {
+    const userRoles = session.roles || [];
+    const isAllowed = allowedRoles.some((role) => {
+      if (role === "admin") {
+        return userRoles.includes("admin") || session.email === "admin@thriftit.vn";
+      }
+      return userRoles.includes(role);
+    });
+
+    if (!isAllowed) {
+      return <Navigate to="/" replace />;
+    }
+  }
+
   return <>{children}</>;
 };
 
@@ -320,11 +344,24 @@ export default function App() {
   const [currentUserAvatar, setCurrentUserAvatar] = useState<string>(session?.avatarUrl || "");
   const [currentRoles, setCurrentRoles] = useState<string[]>(session?.roles || []);
   const [sellerStatus, setSellerStatus] = useState<string>(session?.sellerStatus || "NONE");
+
+  const effectiveSellerStatus: "NONE" | "PENDING" | "APPROVED" | "REJECTED" =
+    currentRoles.includes("seller")
+      ? "APPROVED"
+      : (sellerStatus?.toUpperCase() === "PENDING" || sellerStatus?.toLowerCase() === "pending_approval")
+      ? "PENDING"
+      : (sellerStatus?.toUpperCase() === "APPROVED")
+      ? "APPROVED"
+      : (sellerStatus?.toUpperCase() === "REJECTED")
+      ? "REJECTED"
+      : "NONE";
+
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedSeller, setSelectedSeller] = useState<Seller | null>(null);
   const [activeTag, setActiveTag] = useState<string>("");
   const [headerQuery, setHeaderQuery] = useState<string>("");
   const [currentShopName, setCurrentShopName] = useState<string>("");
+  const [currentShopHandle, setCurrentShopHandle] = useState<string>("");
   const [currentShopAvatar, setCurrentShopAvatar] = useState<string>("");
   const [currentShopRating, setCurrentShopRating] = useState<number>(5);
   const [userRole, setUserRole] = useState<"buyer" | "seller">(() => {
@@ -338,6 +375,32 @@ export default function App() {
 
   // Seller's own listings, populated by API per session. No mock fallback.
   const [myProductsByEmail, setMyProductsByEmail] = useState<Record<string, SellerProduct[]>>({});
+
+  // ── Address book (Buyer delivery addresses) ──
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const defaultDeliveryAddress = useMemo(
+    () => addresses.find((a) => a.isDefault) || addresses[0] || null,
+    [addresses]
+  );
+
+  const refreshAddresses = useCallback(async () => {
+    if (!session?.token) {
+      setAddresses([]);
+      return;
+    }
+    try {
+      const res = await api.get<{ addresses: ApiAddress[] }>("/users/me/addresses");
+      const list = (res.addresses || []).map((a) => adaptAddress(a, "delivery"));
+      setAddresses(list);
+    } catch (err) {
+      // Silent — fail open; user can still checkout by typing address.
+      console.warn("[addresses] load failed:", err);
+    }
+  }, [session?.token]);
+
+  useEffect(() => {
+    refreshAddresses();
+  }, [refreshAddresses]);
 
   const myProducts = myProductsByEmail[currentEmail] || [];
   const setMyProducts = (newProds: React.SetStateAction<SellerProduct[]>) => {
@@ -411,6 +474,7 @@ export default function App() {
         .get<{ seller: import("../types").Seller }>("/sellers/me")
         .then((res) => {
           setCurrentShopName(res.seller.name);
+          setCurrentShopHandle(res.seller.handle || "");
           setCurrentShopAvatar(res.seller.avatar || "");
           setCurrentShopRating(res.seller.rating || 5);
         })
@@ -452,7 +516,7 @@ export default function App() {
 
   // ── Post a new listing ──
   const handleAddProduct = async (newProd: {
-    name: string; price: number; category: string; desc: string; size: string; condition: number; image: string; quantity: number;
+    name: string; price: number; category: string; desc: string; size: string; condition: number; image: string; images?: string[]; quantity: number;
   }) => {
     try {
       const res = await api.post<{ product: import("../lib/api").ApiProduct }>("/products", {
@@ -464,12 +528,25 @@ export default function App() {
         quantity: newProd.quantity,
         description: newProd.desc,
         coverImage: newProd.image,
+        coverImages: newProd.images && newProd.images.length > 0 ? newProd.images : [newProd.image],
+        images: newProd.images && newProd.images.length > 0 ? newProd.images : [newProd.image],
       });
       
+      if (newProd.images && newProd.images.length > 0) {
+        try {
+          localStorage.setItem(`thriftit_images_${res.product._id}`, JSON.stringify(newProd.images));
+        } catch {}
+      }
       const addedProduct = adaptProduct(res.product, new Set(getStoredLikedProducts().map(String)));
+      if (newProd.images && newProd.images.length > 0) {
+        addedProduct.images = newProd.images;
+      }
       setProducts((prev) => [addedProduct, ...prev]);
 
       const newSellerProd = adaptToSellerProduct(res.product, currentUser);
+      if (newProd.images && newProd.images.length > 0) {
+        newSellerProd.image = newProd.images[0];
+      }
       setMyProducts((prev) => [newSellerProd, ...prev]);
 
       showToast(`Đã gửi yêu cầu đăng bán sản phẩm "${newProd.name}". Admin sẽ duyệt tin của bạn trong thời gian sớm nhất!`);
@@ -497,6 +574,17 @@ export default function App() {
   };
 
   const go = (s: Screen, product?: Product, seller?: Seller) => {
+    if (s === "admin") {
+      const isAllowedAdmin =
+        currentRoles.includes("admin") ||
+        session?.roles?.includes("admin") ||
+        currentEmail === "admin@thriftit.vn" ||
+        session?.email === "admin@thriftit.vn";
+      if (!isAllowedAdmin) {
+        showToast("⚠️ Bạn không có quyền truy cập trang quản trị Admin");
+        return;
+      }
+    }
     if (currentRoles.includes("admin") && s !== "admin" && s !== "login") {
       navigate("/admin");
       return;
@@ -772,6 +860,7 @@ export default function App() {
     setOrders([]);
     setCartGroups([]);
     setMyProductsByEmail({});
+    setAddresses([]);
 
     go("login");
   };
@@ -784,74 +873,72 @@ export default function App() {
     name?: string,
     phone?: string,
     address?: string
-  ) => {
+  ): Promise<string | boolean> => {
+    if (!session?.token) {
+      showToast("⚠️ Vui lòng đăng nhập để thanh toán.");
+      return false;
+    }
+
     // Idempotency key so a retry / double-click never produces two orders.
     const idempotencyKey = `idem-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
 
-    // Local optimistic update
-    const localOrder: Order = {
-      id: `ORD-${Date.now().toString().slice(-6)}`,
-      items: orderItems,
-      total,
-      status: "PENDING_PAYMENT",
-      createdAt: new Date().toLocaleDateString("vi-VN"),
-      paymentMethod,
-      shippingName: name,
-      shippingPhone: phone,
-      shippingAddress: address,
-    };
-    setOrders((prev) => [localOrder, ...prev]);
+    try {
+      const res = await api.post<{ order: import("../lib/api").ApiOrder }>("/orders", {
+        shippingName: name,
+        shippingPhone: phone,
+        shippingAddress: address,
+        paymentMethod,
+        idempotencyKey,
+        items: orderItems.map((item) => ({
+          productId: item.productApiId || item.apiId || item.id,
+          quantity: item.qty || 1,
+        })),
+      });
 
-    const purchasedIds = orderItems.map((item) => Number(item.id));
-
-    if (session?.token) {
-      try {
-        const res = await api.post<{ order: import("../lib/api").ApiOrder }>("/orders", {
-          shippingName: name,
-          shippingPhone: phone,
-          shippingAddress: address,
-          paymentMethod,
-          idempotencyKey,
-          items: orderItems.map(item => ({
-            productId: item.productApiId || item.apiId || item.id,
-            quantity: item.qty || 1
-          })),
-        });
-        // replace optimistic order with server one
-        const serverOrder = adaptOrder(res.order);
-        setOrders((prev) => [serverOrder, ...prev.filter((o) => o.id !== localOrder.id)]);
-
-        // Refresh cart from server (it now has fewer items).
-        try {
-          const fresh = await api.get<{ items: import("../lib/api").ApiCartItem[] }>("/cart");
-          const { groups } = adaptCartItems(fresh.items);
-          setCartGroups(groups);
-        } catch {/* best-effort */}
-
-        // Auto-pay (mock) so the state machine advances. In production this
-        // is replaced by a gateway webhook.
-        try {
-          await api.post<{ order: import("../lib/api").ApiOrder }>("/payments/checkout", {
-            orderId: serverOrder.apiId ?? serverOrder.id,
-            method: paymentMethod === "COD" ? "COD" : "card",
-            cardLast4: paymentMethod === "COD" ? "" : paymentMethod.slice(-4),
-          });
-          const finalStatus = paymentMethod === "COD" ? "CONFIRMED" : "PAID";
-          setOrders((prev) => prev.map(o => o.id === serverOrder.id ? { ...o, status: finalStatus } : o));
-          showToast(`✓ Đơn ${serverOrder.id} đã ${paymentMethod === "COD" ? "được xác nhận" : "thanh toán và chờ shop xác nhận"}`);
-          return serverOrder.id;
-        } catch (payErr) {
-          const msg = payErr instanceof ApiError ? payErr.message : "thanh toán thất bại";
-          showToast(`⚠️ Đơn đã tạo nhưng thanh toán lỗi: ${msg}`);
-          return serverOrder.id;
-        }
-      } catch (err) {
-        const msg = err instanceof ApiError ? err.message : "Không kết nối được backend";
-        showToast(`⚠️ Đơn đã tạo offline: ${msg}`);
-        return localOrder.id;
+      const serverOrder = adaptOrder(res.order);
+      if (serverOrder.items && serverOrder.items.length > 0) {
+        serverOrder.items = serverOrder.items.map((it, idx) => ({
+          ...it,
+          seller: it.seller || orderItems[idx]?.seller || "",
+        }));
       }
+      setOrders((prev) => [serverOrder, ...prev]);
+
+      // Refresh cart from server (purchased items removed)
+      try {
+        const fresh = await api.get<{ items: import("../lib/api").ApiCartItem[] }>("/cart");
+        const { groups } = adaptCartItems(fresh.items);
+        setCartGroups(groups);
+      } catch {/* best-effort */}
+
+      // Auto-pay (mock) so the state machine advances. In production this
+      // is replaced by a gateway webhook.
+      try {
+        await api.post<{ order: import("../lib/api").ApiOrder }>("/payments/checkout", {
+          orderId: serverOrder.apiId ?? serverOrder.id,
+          method: paymentMethod === "COD" ? "COD" : "card",
+          cardLast4: paymentMethod === "COD" ? "" : paymentMethod.slice(-4),
+        });
+        const finalStatus = paymentMethod === "COD" ? "CONFIRMED" : "PAID";
+        setOrders((prev) => prev.map((o) => (o.id === serverOrder.id ? { ...o, status: finalStatus } : o)));
+        showToast(`✓ Đơn ${serverOrder.id} đã ${paymentMethod === "COD" ? "được xác nhận" : "thanh toán và chờ shop xác nhận"}`);
+        return serverOrder.id;
+      } catch (payErr) {
+        const msg = payErr instanceof ApiError ? payErr.message : "Thanh toán thất bại";
+        showToast(`⚠️ Đơn đã tạo nhưng thanh toán lỗi: ${msg}`);
+        return serverOrder.id;
+      }
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Đặt hàng không thành công";
+      showToast(`⚠️ Đặt hàng thất bại: ${msg}`);
+      // Refresh cart to show user if any product became out of stock or sold
+      try {
+        const fresh = await api.get<{ items: import("../lib/api").ApiCartItem[] }>("/cart");
+        const { groups } = adaptCartItems(fresh.items);
+        setCartGroups(groups);
+      } catch {}
+      return false;
     }
-    return localOrder.id;
   };
 
   const handleUpdateOrderStatus = (orderId: string, nextStatus: Order["status"], skipApi = false) => {
@@ -879,7 +966,7 @@ export default function App() {
   };
 
   return (
-    <div className="w-full max-w-[1440px] mx-auto min-w-[320px] shadow-sm relative" style={{ backgroundColor: LINEN, ...ff }}>
+    <div className="w-full min-h-screen flex flex-col min-w-[320px] relative overflow-x-hidden" style={{ backgroundColor: LINEN, ...ff }}>
       {toastMsg && (
         <div
           className="fixed top-24 right-8 z-[9999] px-6 py-4 rounded-2xl shadow-xl flex items-center gap-3 animate-fade-in-down transition-all"
@@ -904,7 +991,7 @@ export default function App() {
           isAdmin={currentRoles.includes("admin") || currentEmail === "admin@thriftit.vn"}
         />
       )}
-      <main>
+      <main className="flex-1 w-full">
         <Routes>
           <Route
             path="/"
@@ -915,6 +1002,8 @@ export default function App() {
                 onLike={toggleLike}
                 onAddToCart={addToCart}
                 loading={productsLoading}
+                onCategorySelect={goToSearchWithTag}
+                sellerStatus={effectiveSellerStatus}
               />
             }
           />
@@ -946,6 +1035,7 @@ export default function App() {
                 onAddToCart={addToCart}
                 activeTag={activeTag}
                 headerQuery={headerQuery}
+                setHeaderQuery={setHeaderQuery}
               />
             }
           />
@@ -984,6 +1074,9 @@ export default function App() {
                   cartGroups={cartGroups}
                   updateCart={updateCart}
                   addOrder={addOrder}
+                  addresses={addresses}
+                  defaultAddress={defaultDeliveryAddress}
+                  onAddressesChanged={refreshAddresses}
                 />
               </ProtectedRoute>
             }
@@ -1000,6 +1093,7 @@ export default function App() {
                   userAvatar={userRole === "seller" && currentShopAvatar ? currentShopAvatar : currentUserAvatar}
                   userRating={userRole === "seller" ? currentShopRating : undefined}
                   userEmail={currentEmail}
+                  userHandle={userRole === "seller" && currentShopHandle ? currentShopHandle : undefined}
                   orders={orders}
                   myProducts={myProducts}
                   setMyProducts={setMyProducts}
@@ -1007,7 +1101,7 @@ export default function App() {
                   setUserRole={setUserRole}
                   showToast={showToast}
                   onUpdateOrderStatus={handleUpdateOrderStatus}
-                  sellerStatus={currentRoles.includes("seller") ? "APPROVED" : sellerStatus === "pending_approval" ? "PENDING" : "NONE"}
+                  sellerStatus={effectiveSellerStatus}
                   roles={currentRoles}
                   onUpdateAvatar={(url) => {
                     setCurrentUserAvatar(url);
@@ -1015,6 +1109,8 @@ export default function App() {
                       setStoredSession({ ...session, avatarUrl: url });
                     }
                   }}
+                  addresses={addresses}
+                  onAddressesChanged={refreshAddresses}
                 />
               </ProtectedRoute>
             }
@@ -1031,6 +1127,7 @@ export default function App() {
                   userAvatar={userRole === "seller" && currentShopAvatar ? currentShopAvatar : currentUserAvatar}
                   userRating={userRole === "seller" ? currentShopRating : undefined}
                   userEmail={currentEmail}
+                  userHandle={userRole === "seller" && currentShopHandle ? currentShopHandle : undefined}
                   orders={orders}
                   myProducts={myProducts}
                   setMyProducts={setMyProducts}
@@ -1038,7 +1135,7 @@ export default function App() {
                   setUserRole={setUserRole}
                   showToast={showToast}
                   onUpdateOrderStatus={handleUpdateOrderStatus}
-                  sellerStatus={currentRoles.includes("seller") ? "APPROVED" : sellerStatus === "pending_approval" ? "PENDING" : "NONE"}
+                  sellerStatus={effectiveSellerStatus}
                   roles={currentRoles}
                   onUpdateAvatar={(url) => {
                     setCurrentUserAvatar(url);
@@ -1046,6 +1143,8 @@ export default function App() {
                       setStoredSession({ ...session, avatarUrl: url });
                     }
                   }}
+                  addresses={addresses}
+                  onAddressesChanged={refreshAddresses}
                 />
               </ProtectedRoute>
             }
@@ -1062,6 +1161,7 @@ export default function App() {
                   userAvatar={userRole === "seller" && currentShopAvatar ? currentShopAvatar : currentUserAvatar}
                   userRating={userRole === "seller" ? currentShopRating : undefined}
                   userEmail={currentEmail}
+                  userHandle={userRole === "seller" && currentShopHandle ? currentShopHandle : undefined}
                   orders={orders}
                   myProducts={myProducts}
                   setMyProducts={setMyProducts}
@@ -1069,7 +1169,7 @@ export default function App() {
                   setUserRole={setUserRole}
                   showToast={showToast}
                   onUpdateOrderStatus={handleUpdateOrderStatus}
-                  sellerStatus={currentRoles.includes("seller") ? "APPROVED" : sellerStatus === "pending_approval" ? "PENDING" : "NONE"}
+                  sellerStatus={effectiveSellerStatus}
                   roles={currentRoles}
                   onUpdateAvatar={(url) => {
                     setCurrentUserAvatar(url);
@@ -1077,6 +1177,8 @@ export default function App() {
                       setStoredSession({ ...session, avatarUrl: url });
                     }
                   }}
+                  addresses={addresses}
+                  onAddressesChanged={refreshAddresses}
                 />
               </ProtectedRoute>
             }
@@ -1115,13 +1217,14 @@ export default function App() {
               <ProtectedRoute>
                 <SellerApplyScreen
                   go={go}
+                  sellerStatus={effectiveSellerStatus}
                   onApplySuccess={() => {
-                    setSellerStatus("pending_approval");
+                    setSellerStatus("PENDING");
                     const currentSession = getStoredSession();
                     if (currentSession) {
                       setStoredSession({
                         ...currentSession,
-                        sellerStatus: "pending_approval",
+                        sellerStatus: "PENDING",
                       });
                     }
                   }}
@@ -1129,12 +1232,23 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="/sell" element={<ProtectedRoute><PostScreen go={go} onAddProduct={handleAddProduct} /></ProtectedRoute>} />
+          <Route
+            path="/sell"
+            element={
+              <ProtectedRoute>
+                {effectiveSellerStatus === "PENDING" ? (
+                  <Navigate to="/account" replace />
+                ) : (
+                  <PostScreen go={go} onAddProduct={handleAddProduct} />
+                )}
+              </ProtectedRoute>
+            }
+          />
           <Route path="/post" element={<Navigate to="/sell" replace />} />
           <Route
             path="/admin"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={["admin"]}>
                 <AdminScreen
                   go={go}
                   products={products}

@@ -1,9 +1,27 @@
-import React, { useState } from "react";
-import { CheckCircle, Check } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { CheckCircle, Check, MapPin } from "lucide-react";
 import { T, ESPRESSO, COFFEE, LINEN, CARD, MUTED, SOFT, serif, ff, fmt } from "../../lib/theme";
-import type { Screen, CartGroup, OrderItem } from "../../types";
+import type { Screen, CartGroup, OrderItem, Address } from "../../types";
+import { api } from "../../lib/api";
+import { useAddressCatalog, AddressPickerModal } from "../../components/common/AddressBook";
 
-export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s: Screen) => void; cartGroups: CartGroup[]; updateCart: (cart: CartGroup[]) => void; addOrder: (items: OrderItem[], total: number, payment: string, name?: string, phone?: string, address?: string) => Promise<string | boolean>; }) {
+export function PaymentScreen({
+  go,
+  cartGroups,
+  updateCart,
+  addOrder,
+  addresses = [],
+  defaultAddress = null,
+  onAddressesChanged,
+}: {
+  go: (s: Screen) => void;
+  cartGroups: CartGroup[];
+  updateCart: (cart: CartGroup[]) => void;
+  addOrder: (items: OrderItem[], total: number, payment: string, name?: string, phone?: string, address?: string) => Promise<string | boolean>;
+  addresses?: Address[];
+  defaultAddress?: Address | null;
+  onAddressesChanged?: () => Promise<void> | void;
+}) {
   const [step, setStep] = useState<"address" | "review">("address");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -14,13 +32,81 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
   const [isSuccess, setIsSuccess] = useState(false);
   const [orderId, setOrderId] = useState("");
   const [finalTotal, setFinalTotal] = useState(0);
+  const [orderError, setOrderError] = useState("");
 
-  // Calculate totals
+  // ── Address book integration ──
+  const { provinces, communesByProvince, loadingProvinces, loadingCommunes, error: addressCatalogError } = useAddressCatalog();
+  const [showAddressPicker, setShowAddressPicker] = useState(false);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(
+    defaultAddress?.id ?? null
+  );
+
+  // Auto-fill from default address whenever it changes.
+  useEffect(() => {
+    if (defaultAddress) {
+      setSelectedAddressId(defaultAddress.id);
+      setFullName(defaultAddress.name);
+      setPhone(defaultAddress.phone);
+      setAddress([defaultAddress.detail, defaultAddress.ward, defaultAddress.province]
+        .filter(Boolean)
+        .join(", "));
+    }
+  }, [defaultAddress]);
+
+  const selectedAddress = useMemo(
+    () => addresses.find((a) => a.id === selectedAddressId) || defaultAddress,
+    [addresses, selectedAddressId, defaultAddress]
+  );
+
+  const handlePickAddress = (a: Address) => {
+    setSelectedAddressId(a.id);
+    setFullName(a.name);
+    setPhone(a.phone);
+    setAddress([a.detail, a.ward, a.province].filter(Boolean).join(", "));
+    setShowAddressPicker(false);
+  };
+
+  const handleAddNewAddress = async (input: {
+    name: string;
+    phone: string;
+    detail: string;
+    provinceId: string;
+    wardId: string;
+    isDefault: boolean;
+  }) => {
+    const province = provinces.find((p) => p.id === input.provinceId);
+    const wards = communesByProvince.get(input.provinceId) || [];
+    const ward = wards.find((w) => w.id === input.wardId);
+    try {
+      const res = await api.post<{ address: import("../../lib/api").ApiAddress }>(
+        "/users/me/addresses",
+        {
+          name: input.name,
+          phone: input.phone,
+          address: input.detail,
+          province: province?.name || "",
+          district: ward?.name || "", // legacy 3-level field, kept for backend compat
+          ward: ward?.name || "",
+          isDefault: input.isDefault,
+        }
+      );
+      await onAddressesChanged?.();
+      return res.address;
+    } catch (e) {
+      throw e;
+    }
+  };
+
+  const isItemUnavailable = (item: { stock?: number; status?: string }) => {
+    return (item.stock !== undefined && item.stock <= 0) || item.status === "sold" || item.status === "archived";
+  };
+
+  // Calculate totals - only for valid available checked items
   const allItems = cartGroups.flatMap(g => g.items);
-  const checkedItems = allItems.filter(i => i.checked);
+  const checkedItems = allItems.filter(i => i.checked && !isItemUnavailable(i));
   const subtotal = checkedItems.reduce((s, i) => s + i.price * i.qty, 0);
   const checkedSellers = new Set(checkedItems.map(i => i.seller)).size;
-  const ship = checkedSellers * 30000;
+  const ship = checkedSellers > 0 ? checkedSellers * 30000 : 0;
   const total = subtotal + ship;
 
   const handleNextToPayment = () => {
@@ -41,6 +127,11 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
   };
 
   const handlePlaceCodOrder = async () => {
+    setOrderError("");
+    if (checkedItems.length === 0) {
+      setOrderError("Không có sản phẩm nào khả dụng để thanh toán. Vui lòng kiểm tra lại giỏ hàng.");
+      return;
+    }
     setIsProcessing(true);
 
     const orderItems: OrderItem[] = checkedItems.map(item => ({
@@ -56,18 +147,16 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
       seller: cartGroups.find(g => g.items.some(i => i.id === item.id))?.seller || "",
     }));
 
-    // Generate tentative order ID in case backend doesn't return one
-    const newOrderId = `ORD-${Date.now().toString().slice(-6)}`;
-    setOrderId(newOrderId);
-    setFinalTotal(total);
-
     // Add order and clear cart
     const realOrderId = await addOrder(orderItems, total, "COD", fullName, phone, address);
     if (!realOrderId) {
       setIsProcessing(false);
+      setOrderError("Đặt hàng thất bại. Sản phẩm trong giỏ có thể đã hết hàng hoặc không khả dụng. Vui lòng kiểm tra lại giỏ hàng.");
       return;
     }
-    setOrderId(typeof realOrderId === "string" ? realOrderId : newOrderId);
+    const confirmedOrderId = typeof realOrderId === "string" ? realOrderId : `ORD-${Date.now().toString().slice(-6)}`;
+    setOrderId(confirmedOrderId);
+    setFinalTotal(total);
 
     const newCart = cartGroups.map(g => ({
       ...g,
@@ -186,7 +275,9 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
         {step === "address" && (
           <div className="space-y-6">
             <div className="rounded-2xl p-5" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
-              <h3 className="text-base font-bold mb-4 font-serif" style={{ ...serif, color: ESPRESSO }}>Thông tin nhận hàng</h3>
+              <h3 className="text-base font-bold mb-4 font-serif" style={{ ...serif, color: ESPRESSO }}>
+                Thông tin nhận hàng
+              </h3>
 
               {addressError && (
                 <div className="mb-4 p-3.5 rounded-xl border text-xs font-semibold" style={{ backgroundColor: "#FDEDEC", color: "#E74C3C", borderColor: "#FADBD8" }}>
@@ -194,9 +285,75 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
                 </div>
               )}
 
+              {addressCatalogError && (
+                <div className="mb-4 p-3 rounded-xl border text-xs font-semibold" style={{ backgroundColor: "#FFF9E6", color: "#8A6D3B", borderColor: "#F0E1A6" }}>
+                  ⚠️ {addressCatalogError}. Bạn vẫn có thể nhập tay bên dưới.
+                </div>
+              )}
+
+              {/* ── Selected saved-address card (Buyer has at least 1) ── */}
+              {selectedAddress && (
+                <div
+                  className="mb-4 p-3.5 rounded-2xl border-2 flex items-start gap-3"
+                  style={{ borderColor: T, backgroundColor: `${T}0A` }}
+                >
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: `${T}22`, color: T }}
+                  >
+                    <MapPin size={18} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm" style={{ color: ESPRESSO, ...ff }}>
+                        {selectedAddress.name}
+                      </span>
+                      <span className="text-xs" style={{ color: COFFEE, ...ff }}>
+                        · {selectedAddress.phone}
+                      </span>
+                      {selectedAddress.isDefault && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                          style={{ backgroundColor: `${T}22`, color: T, ...ff }}
+                        >
+                          Mặc định
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs mt-1" style={{ color: COFFEE, ...ff }}>
+                      {[selectedAddress.detail, selectedAddress.ward, selectedAddress.province]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowAddressPicker(true)}
+                    className="text-xs font-bold shrink-0 hover:opacity-80"
+                    style={{ color: T, ...ff }}
+                  >
+                    Đổi
+                  </button>
+                </div>
+              )}
+
+              {/* ── Address picker trigger (Buyer has no saved address) ── */}
+              {!selectedAddress && (
+                <button
+                  onClick={() => setShowAddressPicker(true)}
+                  className="w-full mb-4 p-3 rounded-2xl border-2 border-dashed flex items-center justify-center gap-2 hover:bg-stone-50 transition-colors"
+                  style={{ borderColor: T, color: T, ...ff }}
+                >
+                  <MapPin size={16} />
+                  <span className="text-sm font-bold">Chọn từ sổ địa chỉ (đã lưu)</span>
+                </button>
+              )}
+
+              {/* ── Editable fields (still needed for the free-text shippingAddress payload) ── */}
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs font-bold block mb-1.5" style={{ color: COFFEE, ...ff }}>Họ và tên người nhận *</label>
+                  <label className="text-xs font-bold block mb-1.5" style={{ color: COFFEE, ...ff }}>
+                    Họ và tên người nhận *
+                  </label>
                   <input
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
@@ -206,7 +363,9 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold block mb-1.5" style={{ color: COFFEE, ...ff }}>Số điện thoại liên hệ *</label>
+                  <label className="text-xs font-bold block mb-1.5" style={{ color: COFFEE, ...ff }}>
+                    Số điện thoại liên hệ *
+                  </label>
                   <input
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
@@ -216,15 +375,20 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold block mb-1.5" style={{ color: COFFEE, ...ff }}>Địa chỉ giao hàng chi tiết *</label>
+                  <label className="text-xs font-bold block mb-1.5" style={{ color: COFFEE, ...ff }}>
+                    Địa chỉ giao hàng chi tiết *
+                  </label>
                   <textarea
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
-                    placeholder="Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành phố..."
+                    placeholder="Số nhà, tên đường, phường/xã, tỉnh/thành phố..."
                     rows={3}
                     className="w-full px-4 py-3 rounded-xl text-sm outline-none border-2 resize-none transition-all"
                     style={{ backgroundColor: SOFT, border: `2px solid ${MUTED}`, color: ESPRESSO, ...ff }}
                   />
+                  <p className="text-[11px] mt-1.5" style={{ color: COFFEE + "AA", ...ff }}>
+                    Có thể chỉnh tay nếu cần. Ưu tiên chọn từ sổ địa chỉ để đảm bảo đồng bộ vận chuyển.
+                  </p>
                 </div>
               </div>
             </div>
@@ -251,6 +415,21 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
         {/* STEP 2: Xác nhận & Đặt hàng */}
         {step === "review" && (
           <div className="space-y-6">
+            {orderError && (
+              <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-sm flex flex-col gap-2">
+                <div className="flex items-center gap-2 font-bold">
+                  <span>⚠️ Đặt hàng không thành công:</span>
+                </div>
+                <p>{orderError}</p>
+                <button
+                  type="button"
+                  onClick={() => go("cart")}
+                  className="mt-1 px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 text-white hover:bg-rose-700 transition-colors w-fit cursor-pointer"
+                >
+                  Quay lại giỏ hàng để cập nhật
+                </button>
+              </div>
+            )}
             {/* Order Summary Card */}
             <div className="rounded-2xl p-5" style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}>
               <h3 className="text-base font-bold mb-4" style={{ ...serif, color: ESPRESSO }}>Đơn hàng của bạn</h3>
@@ -312,6 +491,20 @@ export function PaymentScreen({ go, cartGroups, updateCart, addOrder }: { go: (s
           </div>
         )}
       </div>
+
+      {/* Address picker modal */}
+      <AddressPickerModal
+        open={showAddressPicker}
+        addresses={addresses}
+        defaultId={selectedAddressId ?? defaultAddress?.id}
+        onClose={() => setShowAddressPicker(false)}
+        onSelect={handlePickAddress}
+        onAddNew={handleAddNewAddress}
+        provinces={provinces}
+        communesByProvince={communesByProvince}
+        loadingProvinces={loadingProvinces}
+        loadingCommunes={loadingCommunes}
+      />
     </div>
   );
 }

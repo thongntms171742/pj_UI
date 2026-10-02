@@ -5,50 +5,112 @@ import { T, ESPRESSO, COFFEE, LINEN, MUTED, SOFT, ff, serif } from "../../lib/th
 import type { Screen } from "../../types";
 import { api, ApiError } from "../../lib/api";
 
-export function SellerApplyScreen({ go, onApplySuccess }: { go: (s: Screen) => void, onApplySuccess: () => void }) {
+function toHandleSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, "d")
+    .replace(/[^a-z0-9_.]/g, "")
+    .slice(0, 30);
+}
+
+export function SellerApplyScreen({
+  go,
+  onApplySuccess,
+  sellerStatus = "NONE",
+}: {
+  go: (s: Screen) => void;
+  onApplySuccess: () => void;
+  sellerStatus?: "NONE" | "PENDING" | "APPROVED" | "REJECTED";
+}) {
   const [shopName, setShopName] = useState("");
+  const [handle, setHandle] = useState("");
+  const [isHandleCustomized, setIsHandleCustomized] = useState(false);
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState(sellerStatus === "PENDING");
+
+  const handleShopNameChange = (val: string) => {
+    setShopName(val);
+    setError("");
+    if (!isHandleCustomized) {
+      setHandle(toHandleSlug(val));
+    }
+  };
+
+  const handleHandleChange = (val: string) => {
+    setIsHandleCustomized(true);
+    setError("");
+    const raw = val.startsWith("@") ? val.slice(1) : val;
+    setHandle(toHandleSlug(raw));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!shopName.trim() || shopName.trim().length < 3) {
+    const cleanShopName = shopName.trim();
+    if (!cleanShopName || cleanShopName.length < 3) {
       setError("Tên Shop phải có ít nhất 3 ký tự");
       return;
     }
+    const cleanHandle = handle.trim().replace(/^@+/, "").toLowerCase();
+    if (!cleanHandle || cleanHandle.length < 3) {
+      setError("Định danh shop (@handle) phải có ít nhất 3 ký tự");
+      return;
+    }
+    if (cleanHandle.length > 30) {
+      setError("Định danh shop (@handle) không được vượt quá 30 ký tự");
+      return;
+    }
+    if (!/^[a-z0-9_.]+$/.test(cleanHandle)) {
+      setError("Định danh shop chỉ gồm chữ thường (không dấu), số, dấu gạch dưới (_) và dấu chấm (.)");
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
       await api.post("/auth/seller/apply", {
-        shopName,
-        description,
+        shopName: cleanShopName,
+        handle: cleanHandle,
+        description: description.trim() || undefined,
       });
       setSuccess(true);
       onApplySuccess();
     } catch (err: unknown) {
-      const msg = err instanceof ApiError ? err.message : "Đăng ký thất bại";
+      let msg = "Đăng ký thất bại";
+      if (err instanceof ApiError) {
+        if (err.message === "SELLER_HANDLE_TAKEN" || err.message.toLowerCase().includes("handle")) {
+          msg = `Định danh @${cleanHandle} đã có người sử dụng. Vui lòng chọn tên định danh khác.`;
+        } else if (err.message === "SELLER_SHOP_NAME_TAKEN" || err.message.toLowerCase().includes("shopname")) {
+          msg = `Tên shop "${cleanShopName}" đã có người đăng ký. Vui lòng chọn tên khác.`;
+        } else {
+          msg = err.message;
+        }
+      }
       setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  if (success) {
+  if (sellerStatus === "PENDING" || success) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: LINEN }}>
-        <div className="max-w-md w-full bg-transparent p-8 text-center">
+        <div className="max-w-md w-full bg-white border border-[#E8D5BC] rounded-3xl p-8 text-center shadow-sm">
           <div className="w-20 h-20 rounded-full mx-auto flex items-center justify-center mb-6" style={{ backgroundColor: "#E9F7EF", color: "#27AE60" }}>
             <CheckCircle size={40} />
           </div>
-          <h2 className="text-3xl font-bold mb-4" style={{ ...serif, color: ESPRESSO }}>Đăng ký thành công!</h2>
-          <p className="text-base mb-10 leading-relaxed" style={{ color: COFFEE, ...ff }}>
+          <h2 className="text-2xl sm:text-3xl font-bold mb-3" style={{ ...serif, color: ESPRESSO }}>
+            {sellerStatus === "PENDING" ? "Hồ sơ đang chờ duyệt!" : "Đăng ký thành công!"}
+          </h2>
+          <p className="text-sm sm:text-base mb-8 leading-relaxed" style={{ color: COFFEE, ...ff }}>
             Đơn đăng ký trở thành người bán của bạn đã được gửi. Đội ngũ thrift it! sẽ xét duyệt trong thời gian sớm nhất.
           </p>
           <button
             onClick={() => go("account")}
-            className="w-full py-4 rounded-xl font-bold text-base text-white transition-all hover:opacity-90 shadow-md"
+            className="w-full py-3.5 rounded-xl font-bold text-sm sm:text-base text-white transition-all hover:opacity-90 shadow-md cursor-pointer"
             style={{ backgroundColor: T, ...ff }}
           >
             Quay lại Tài khoản
@@ -140,20 +202,62 @@ export function SellerApplyScreen({ go, onApplySuccess }: { go: (s: Screen) => v
             <div className="space-y-5">
               <div>
                 <label className="block text-[13px] font-bold mb-2 uppercase tracking-wide" style={{ color: COFFEE, ...ff }}>
-                  Tên Shop
+                  Tên Shop <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={shopName}
-                  onChange={(e) => {
-                    setShopName(e.target.value);
-                    setError("");
-                  }}
-                  placeholder="Ví dụ: Tiệm đồ cũ của Linh"
-                  className="w-full px-4 py-3.5 rounded-xl text-base outline-none border-2 transition-all"
+                  onChange={(e) => handleShopNameChange(e.target.value)}
+                  placeholder="Ví dụ: Tiệm đồ cũ của Linh, SHop thong Đồ cũ"
+                  className="w-full px-4 py-3.5 rounded-xl text-base outline-none border-2 transition-all focus:border-amber-500/40"
                   style={{ backgroundColor: SOFT, border: `2px solid transparent`, color: ESPRESSO, ...ff }}
                   required
+                  minLength={3}
+                  maxLength={100}
                 />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-[13px] font-bold uppercase tracking-wide" style={{ color: COFFEE, ...ff }}>
+                    Tên định danh (@handle) <span className="text-red-500">*</span>
+                  </label>
+                  <span className="text-[11px] text-stone-500" style={ff}>
+                    {handle.length}/30 ký tự
+                  </span>
+                </div>
+
+                <div
+                  className="flex items-center px-4 py-3.5 rounded-xl border-2 transition-all focus-within:border-amber-500/50"
+                  style={{ backgroundColor: SOFT, border: "2px solid transparent" }}
+                >
+                  <span className="text-base font-bold select-none mr-1.5" style={{ color: T }}>
+                    @
+                  </span>
+                  <input
+                    type="text"
+                    value={handle}
+                    onChange={(e) => handleHandleChange(e.target.value)}
+                    placeholder="thongshop.vintage"
+                    className="w-full bg-transparent text-base outline-none font-medium"
+                    style={{ color: ESPRESSO, ...ff }}
+                    required
+                    minLength={3}
+                    maxLength={30}
+                  />
+                </div>
+
+                <div className="mt-2 space-y-1 text-xs" style={ff}>
+                  <p className="text-stone-500 truncate flex items-center gap-1">
+                    <span>Đường dẫn shop:</span>
+                    <span className="font-semibold underline" style={{ color: T }}>
+                      thriftit.vn/sellers/{handle || "ten_dinh_danh"}
+                    </span>
+                  </p>
+                  <p className="text-[11px] text-stone-400">
+                    * Định danh dùng để định vị trang shop, chỉ gồm chữ thường không dấu (a-z), số (0-9), dấu chấm (.) và gạch dưới (_)
+                  </p>
+                </div>
               </div>
               
               <div>

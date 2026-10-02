@@ -149,6 +149,8 @@ export type ApiProduct = {
   reservedUntil?: string | null;
   reservedByOrderId?: string | null;
   coverImage: string;
+  coverImages?: string[];
+  images?: string[];
   views: number;
   likes: number;
   location?: string;
@@ -260,3 +262,20 @@ export type ApiSessionUser = {
   name: string;
   roles: ("buyer" | "seller" | "admin")[];
 };
+
+export type ApiAddress = {
+  _id: string;
+  name: string;
+  phone: string;
+  address: string;
+  province: string;
+  district: string;
+  ward: string;
+  isDefault: boolean;
+};
+
+export type ApiAddressPayload = Omit<ApiAddress, "_id"> & { _id?: string };
+
+export type ApiProvince = { id: string; name: string };
+export type ApiCommune = { id: string; name: string; provinceId?: string };
+export type ApiAddressesList = { data: ApiProvince[] | ApiCommune[]; effectiveDate: string };

@@ -11,10 +11,10 @@ This file tracks the implementation status of API features across teams based on
 | POST | `/api/auth/seller/apply` | Yes | Any | ✅ | ✅ | Seller onboarding application |
 | POST | `/api/auth/cart/merge` | Yes | Buyer | ✅ | ✅ | Legacy cart merge alias |
 | **Users** | | | | | | |
-| GET | `/api/users/me/addresses` | Yes | Any | ✅ | ⏳ | Get user's saved addresses |
-| POST | `/api/users/me/addresses` | Yes | Any | ✅ | ⏳ | Add a new address |
-| PATCH | `/api/users/me/addresses/:id` | Yes | Any | ✅ | ⏳ | Update an address (incl. default) |
-| DELETE | `/api/users/me/addresses/:id` | Yes | Any | ✅ | ⏳ | Delete an address |
+| GET | `/api/users/me/addresses` | Yes | Any | ✅ | ✅ | Get user's saved addresses |
+| POST | `/api/users/me/addresses` | Yes | Any | ✅ | ✅ | Add a new address |
+| PATCH | `/api/users/me/addresses/:id` | Yes | Any | ✅ | ✅ | Update an address (incl. default) |
+| DELETE | `/api/users/me/addresses/:id` | Yes | Any | ✅ | ✅ | Delete an address |
 | **Sellers** | | | | | | |
 | GET | `/api/sellers` | No | Public | ✅ | ✅ | Active seller shops catalog |
 | GET | `/api/sellers/me` | Yes | Seller | ✅ | ✅ | Authenticated seller dashboard profile |
@@ -53,6 +53,9 @@ This file tracks the implementation status of API features across teams based on
 | GET | `/api/notifications` | Yes | Any | ✅ | ✅ | User notification feed |
 | PATCH | `/api/notifications/:id/read` | Yes | Any | ✅ | ✅ | Mark notification as read |
 | **Admin** | | | | | | |
+| GET | `/api/admin/users` | Yes | Admin | ✅ | ⏳ | Users list with pagination & filters |
+| PATCH | `/api/admin/users/:id/status` | Yes | Admin | ✅ | ⏳ | Ban or unban user account |
+| GET | `/api/admin/users/:id/details` | Yes | Admin | ✅ | ⏳ | User details & stats |
 | GET | `/api/admin/pending-listings` | Yes | Admin | ✅ | ✅ | Pending product listings moderation |
 | PATCH | `/api/admin/listings/:id/approve` | Yes | Admin | ✅ | ✅ | Approve listing -> active |
 | PATCH | `/api/admin/listings/:id/reject` | Yes | Admin | ✅ | ✅ | Reject listing -> archived |
@@ -64,3 +67,7 @@ This file tracks the implementation status of API features across teams based on
 | POST | `/api/ai/search` | No | Public | ✅ | ✅ | Natural language search |
 | POST | `/api/ai/analyze-listing` | No | Public | ✅ | ✅ | Listing valuation and categorization |
 | POST | `/api/ai/recommendations` | No | Public | ✅ | ⏳ | Product recommendations |
+| **Addresses** | | | | | | |
+| GET | `/api/addresses/provinces` | No | Public | ✅ | ✅ | CAS proxy: list provinces/cities (cached 24h) |
+| GET | `/api/addresses/provinces/:provinceId/communes` | No | Public | ✅ | ✅ | CAS proxy: list communes by province (cached 24h) |
+| GET | `/api/addresses/communes` | No | Public | ✅ | ✅ | CAS proxy: list all communes nationwide (cached 24h) |

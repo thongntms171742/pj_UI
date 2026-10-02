@@ -230,3 +230,57 @@ The project follows a strict API contract model between the Frontend and Backend
 - **`ORDER_BUYER_NOT_PARTICIPANT` Bug**: Fixed issue in `updateOrderStatus` where the buyer was previously blocked from transitioning an order to `DELIVERED` or `DISPUTED`. Updated role-based restrictions in `orderController.ts` to allow buyers to transition orders to `DELIVERED` and `DISPUTED` (alongside `CANCELLED` and `COMPLETED`). Updated `API_CONTRACT.md` and `ERROR_CODES.md` to reflect this fix. Fixed related test in `orderAuth.test.ts`.
 - **`CANCEL_REQUESTED` Flow**: Added `CANCEL_REQUESTED` to `ORDER_STATUSES` enum and updated `VALID_TRANSITIONS` in `Order.ts` to support buyer cancellation requests. Added `cancelReason` and `cancelRequestedAt` fields to the `Order` schema and `mapOrder` output. Allowed inventory restoration when an order transitions to `CANCELLED` directly from `CANCEL_REQUESTED`.
 - **Seller Delivery Restrictions**: Removed the role-based restriction preventing sellers from setting `DELIVERING` and `DELIVERED` status directly in `orderController.ts` (since there is no real shipping provider). Updated tests for new seller permissions.
+- **Avatar Synchronization**: Fixed an issue in `authController.updateAvatar` where uploading a new avatar only updated the seller profile. Added `avatarUrl` field to `IUser` interface and `UserSchema` in `User.ts`. When registering a shop (`applySeller`), if the user does not provide an explicit `avatarUrl`, it automatically inherits `existingUser.avatarUrl` (buyer's avatar). If an avatar is provided during shop registration and the user has none, it also initializes `existingUser.avatarUrl`. Synchronized `avatarUrl` across `login`, `register`, `applySeller`, and `PUT /api/auth/me/avatar`.
+- **CAS Address Kit Proxy & Order Address Snapshot (2026-10-03)**:
+  - Added `backend/src/services/addressService.ts`: Proxies CAS Address Kit (`https://production.cas.so/address-kit`), implements 24-hour in-memory cache, 5s timeout via `AbortController`, validation of `effectiveDate` (`latest` or `YYYY-MM-DD`), and normalizes responses to `{ data: [{ id, name }], effectiveDate }`.
+  - Added `backend/src/controllers/addressController.ts` and `backend/src/routes/addresses.ts`: Registered endpoints `GET /api/addresses/provinces`, `GET /api/addresses/provinces/:provinceId/communes`, and `GET /api/addresses/communes`.
+  - Added order address snapshot fields (`shippingProvinceId`, `shippingProvinceName`, `shippingCommuneId`, `shippingCommuneName`, `addressEffectiveDate`) to `IOrder`, `OrderSchema`, `createOrder`, and `mapOrder` so historical orders retain unchanging address snapshots at the time of purchase.
+  - Added `test:address` in `package.json` and integrated into `test:all`. Verified with 16/16 address tests passing.
+
+## Frontend Iteration 2026-10-03 (Address Book UX + Unsplash Cleanup)
+
+### Removed Unsplash fallbacks for user data
+- `frontend/src/components/common/LetterAvatar.tsx` (NEW): reusable zero-dependency letter-based circular avatar (used for missing seller avatars).
+- `frontend/src/components/common/LetterAvatar.tsx` (same file) also exports `PlaceholderImage` — neutral dashed-border placeholder used for missing product photos / review thumbnails.
+- `SellerCard.tsx`: `seller.avatar || "https://images.unsplash.com/..."` replaced with `LetterAvatar`.
+- `ProductDetailScreen.tsx`:
+  - Product image fallback (line ~110): removed Unsplash URL, render `<PlaceholderImage>` instead when no images.
+  - Seller avatar in seller card (line ~493): replaced with `<LetterAvatar>`.
+- `AccountScreen.tsx` review-dialog product thumbnail: replaced Unsplash with `<PlaceholderImage>`.
+- **Marketing banners (Hero, Login, Register, SellerApply)** intentionally keep static Unsplash imagery — those are UI illustrations, not user data.
+
+### Address Book + 2-level CAS picker
+- `frontend/src/components/common/AddressBook.tsx` (NEW):
+  - `useAddressCatalog()` hook — loads provinces (`GET /api/addresses/provinces`) + all communes (`GET /api/addresses/communes`) once.
+  - `AddressFormFields` — shared form with Province ➜ Commune dropdowns.
+  - `AddressPickerModal` — Buyer checkout modal: select OR add inline.
+  - `AddressBookCard` — read-only address card with edit/delete/set-default actions.
+- `frontend/src/lib/api.ts`: added `ApiAddress`, `ApiProvince`, `ApiCommune`, `ApiAddressesList` types.
+- `frontend/src/lib/adapters.ts`: added `adaptAddress(api, type)` and `buildShippingAddressString(addr)`.
+- `frontend/src/types/index.ts`: `Address` interface updated to 2-level post-merger hierarchy (`province` + `ward`), legacy `district` kept as alias.
+- `frontend/src/app/App.tsx`:
+  - Added `addresses` state, `defaultDeliveryAddress` memo, `refreshAddresses()` wired to `GET /api/users/me/addresses`.
+  - Logout now clears `addresses`.
+  - Passes `addresses` + `defaultAddress` + `onAddressesChanged` into `PaymentScreen` and `AccountScreen`.
+- `frontend/src/pages/account/AccountScreen.tsx`:
+  - Added `AddressBookTab` (Buyer — Sổ địa chỉ nhận hàng): full CRUD via `GET/POST/PATCH/DELETE /api/users/me/addresses`, CAS-based address form, edit/delete/set-default UX.
+  - Added `WarehouseTab` (Seller — Kho hàng): single warehouse address used by shipment dialog.
+  - Buyer tab list now has "Sổ địa chỉ"; Seller tab list now has "Kho hàng".
+  - Shipment creation dialog `shipDialogPickup`:
+    - Defaults sourced from saved warehouse address (was hardcoded `"Cửa hàng của tôi"` / `"0909000000"` / `"TP. Hồ Chí Minh"`).
+    - Replaced legacy `Quận/Huyện` textbox with `Phường/Xã` field (post-merger 2 cấp).
+    - Shows warehouse hint when configured, warning + link to Warehouse tab when missing.
+    - Re-fills pickup whenever shipment dialog opens.
+- `frontend/src/pages/payment/PaymentScreen.tsx`:
+  - Accepts `addresses`, `defaultAddress`, `onAddressesChanged`.
+  - Auto-fills name/phone/address from default address on mount.
+  - Shows selected-address summary card with "Đổi" button ➜ opens `AddressPickerModal`.
+  - `handleAddNewAddress` POSTs to `/api/users/me/addresses` using CAS-resolved names.
+  - Free-text fields remain available for graceful degradation when catalog fails to load.
+  - Stale `Quận/Huyện` placeholder text removed.
+
+### Verification
+- ✅ `cd backend && npm run build` — passes (exit 0).
+- ✅ `cd backend && npm test` — **38/38 PASS**.
+- ✅ `cd frontend && npm run build` (vite) — passes. Bundle: 448.46 kB JS / 121.80 kB CSS.
+- ⚠️ Live integration with `/api/users/me/addresses` not verified (no MongoDB live connection in this session).

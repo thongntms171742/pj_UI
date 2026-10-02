@@ -1,11 +1,89 @@
 # AI Changelog
 
+## [2026-10-03] (cont.)
+### Changed (Frontend - Cleanup Unsplash Fallbacks + Address Book UX)
+- **No more third-party fallback images for user data.** Removed all `https://images.unsplash.com/...` URLs used as fallbacks for missing user avatars / product photos. Replaced with:
+  - New `LetterAvatar` component (`frontend/src/components/common/LetterAvatar.tsx`) — deterministic initial-based circle in brand colors.
+  - New `PlaceholderImage` component — neutral dashed-border box with optional icon and label.
+- Updated `SellerCard.tsx`: now uses `LetterAvatar` when `seller.avatar` is empty (instead of Unsplash girl portrait).
+- Updated `ProductDetailScreen.tsx`:
+  - Removed fallback URL for product image (now uses `PlaceholderImage` with `ImageOff` icon when no images uploaded).
+  - Removed fallback URL for seller avatar in product-detail seller card (now uses `LetterAvatar`).
+- Updated `AccountScreen.tsx` review-dialog product thumbnail: now uses `PlaceholderImage` (no Unsplash).
+- **Marketing assets (Hero banner, login/register banners, seller-apply banners) intentionally kept** — they are static UI illustrations, not user data.
+- Updated `types/index.ts`: `Address` interface now reflects 2-level post-merger hierarchy (province + ward), legacy `district` field kept as backward-compat alias.
+
+### Added (Frontend - Address Book & 2-level CAS Picker)
+- New `frontend/src/components/common/AddressBook.tsx`:
+  - `useAddressCatalog()` hook — loads provinces (`/api/addresses/provinces`) and all communes (`/api/addresses/communes`) from CAS proxy. Handles 2-level admin hierarchy (Tỉnh/Thành ➜ Phường/Xã).
+  - `AddressFormFields` — shared form fields with CAS dropdowns (no free-text province/ward).
+  - `AddressPickerModal` — Buyer checkout modal: pick existing address or add a new one inline.
+  - `AddressBookCard` — read-only card for displaying addresses in Address Book tab.
+- Updated `frontend/src/lib/api.ts`: added `ApiAddress`, `ApiProvince`, `ApiCommune`, `ApiAddressesList` types.
+- Updated `frontend/src/lib/adapters.ts`: added `adaptAddress(api, type)` and `buildShippingAddressString(addr)` helpers.
+- Updated `frontend/src/app/App.tsx`:
+  - Added top-level `addresses` state + `refreshAddresses()` loader wired to `GET /api/users/me/addresses`.
+  - Computed `defaultDeliveryAddress` (memoized).
+  - Logout now clears `addresses`.
+  - Passes `addresses` + `defaultAddress` + `onAddressesChanged` into `PaymentScreen`.
+  - Passes `addresses` + `onAddressesChanged` into `AccountScreen`.
+- Updated `frontend/src/pages/account/AccountScreen.tsx`:
+  - Added new `AddressBookTab` (Buyer — Sổ địa chỉ nhận hàng): CRUD list with edit/delete/set-default flows hitting `/api/users/me/addresses`. Includes province + commune dropdowns from CAS proxy.
+  - Added new `WarehouseTab` (Seller — Địa chỉ kho hàng lấy hàng): single warehouse address used to auto-fill shipment pickup. Same form fields, no default-toggle (single source of truth).
+  - Tab list updated: Buyer now has "Sổ địa chỉ" tab; Seller now has "Kho hàng" tab.
+  - Shipment creation dialog (`shipDialogPickup`):
+    - Default values now sourced from saved warehouse address instead of hardcoded `"Cửa hàng của tôi"` / `"0909000000"` / `"TP. Hồ Chí Minh"`.
+    - Removed legacy `district` textbox, replaced with `ward` field (post-merger 2-level).
+    - Shows hint when warehouse is set ("đang dùng kho hàng đã lưu") and warning when missing (link to Warehouse tab).
+    - Re-fills pickup whenever `shipDialogOrder` changes.
+- Updated `frontend/src/pages/payment/PaymentScreen.tsx`:
+  - Accepts `addresses`, `defaultAddress`, `onAddressesChanged` props.
+  - When default address is set, auto-fills name/phone/full address on mount.
+  - Shows selected-address card with "Đổi" button — opens `AddressPickerModal` to switch or add new.
+  - `handleAddNewAddress` POSTs to `/api/users/me/addresses` using CAS-resolved names.
+  - Graceful degradation: still accepts free-text edits if CAS catalog fails to load.
+  - Stale "Quận/Huyện" placeholder text removed from address textarea (post-merger = 2 cấp).
+- No backend changes were needed for this iteration — `/api/users/me/addresses` was already implemented.
+
+### Verification
+- ✅ `cd backend && npm run build` (tsc) — passes (exit 0).
+- ✅ `cd backend && npm test` — 38/38 PASS.
+- ✅ `cd frontend && npm run build` (vite) — passes (no TS errors). Bundle: 448.46 kB JS, 121.80 kB CSS.
+- ⚠️ Live integration with `/api/users/me/addresses` not verified in this session (no MongoDB live connection in this environment).
+
+## [2026-10-03]
+### Added (Backend - CAS Address Kit Proxy & Order Snapshot)
+- Created `backend/src/services/addressService.ts`:
+  - Proxies CAS Address Kit (`https://production.cas.so/address-kit`).
+  - In-memory cache with 24-hour TTL for provinces and communes.
+  - 5-second request timeout via `AbortController`.
+  - Normalization of upstream CAS data to `{ data: [{ id, name }], effectiveDate }`.
+  - Validation for `effectiveDate` (`latest` or `YYYY-MM-DD`).
+- Created `backend/src/controllers/addressController.ts` and `backend/src/routes/addresses.ts`:
+  - `GET /api/addresses/provinces` (query: `effectiveDate`)
+  - `GET /api/addresses/provinces/:provinceId/communes` (param: `provinceId`, query: `effectiveDate`)
+  - `GET /api/addresses/communes` (query: `effectiveDate`)
+- Mounted `/api/addresses` in `backend/src/app.ts`.
+- Updated double-layer Order snapshot in `Order.ts` and `orderController.ts` with `shippingProvinceId`, `shippingProvinceName`, `shippingCommuneId`, `shippingCommuneName`, `addressEffectiveDate`.
+- Added address error codes (`INVALID_EFFECTIVE_DATE: 400`, `PROVINCE_NOT_FOUND: 404`, `ADDRESS_UPSTREAM_TIMEOUT: 504`, `ADDRESS_UPSTREAM_ERROR: 502`) in `utils/errors.ts`.
+- Added test suite `backend/src/tests/address.test.ts` (16 tests passed).
+- Updated `docs/API_CONTRACT.md`, `docs/openapi.yaml`, and `docs/API_MATRIX.md`.
+
 ## [2026-10-01]
-### Added (Backend - Users)
+### Added (Backend - Users & Admin)
+- Added `accountStatus` (`"active"` | `"suspended"`) and `accountStatusReason` fields to `User` model.
+- Updated `auth.ts` middleware (`requireAuth` and `optionalAuth`) to fetch the user from the database and reject requests with `403 FORBIDDEN` if `accountStatus === "suspended"`.
+- Added `GET /api/admin/users` (List users with pagination, search, role filters) in `adminController.ts`.
+- Added `PATCH /api/admin/users/:id/status` (Ban / Unban users) in `adminController.ts`.
+- Added `GET /api/admin/users/:id/details` (View user transaction history, orders, spent) in `adminController.ts`.
+- Added User Management routes to `routes/admin.ts`.
 - Added `AddressSchema` embedded in `User` model to support persistent buyer and seller addresses.
 - Added `GET /api/users/me/addresses`, `POST /api/users/me/addresses`, `PATCH /api/users/me/addresses/:id`, and `DELETE /api/users/me/addresses/:id` endpoints in `userController.ts`.
 - Registered `/api/users` routes in `app.ts`.
-- Updated `docs/API_CONTRACT.md` and `docs/API_MATRIX.md` with the new Users endpoints.
+- Updated `docs/API_CONTRACT.md` and `docs/API_MATRIX.md` with the new Users and Admin User Management endpoints.
+
+### Fixed (Backend)
+- **Avatar Synchronization**: Fixed an issue in `PUT /api/auth/me/avatar` where uploading a new avatar only updated the seller profile. Added `avatarUrl` field to `IUser` interface and `UserSchema` in `User.ts` (resolving TypeScript compilation error `TS2339`). It now updates `user.avatarUrl` and synchronizes to `user.sellerProfile.avatarUrl`, ensuring consistent avatars across both Buyer and Seller views. In `applySeller`, if no `avatarUrl` is passed, it automatically inherits `existingUser.avatarUrl` (buyer's avatar); if provided, it also populates `existingUser.avatarUrl` if empty. Also returned `avatarUrl` in auth response objects (`login`, `register`, `applySeller`).
 
 ### Fixed (BE DOC Inconsistencies — P0 Audit)
 - **`docs/ENUMS.md`**: Added `CANCEL_REQUESTED` to Order Status table, updated state machine transitions (`CONFIRMED/PACKING → CANCEL_REQUESTED`), and corrected role-based restrictions to match actual code (buyer now allowed `CANCELLED`, `CANCEL_REQUESTED`, `DELIVERED`, `COMPLETED`, `DISPUTED`; seller now allowed `DELIVERING` and `DELIVERED`, only blocked from `COMPLETED`).

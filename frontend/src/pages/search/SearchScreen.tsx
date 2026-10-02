@@ -14,6 +14,7 @@ interface SearchScreenProps {
   onAddToCart: (product: Product) => void;
   activeTag?: string;
   headerQuery?: string;
+  setHeaderQuery?: (q: string) => void;
 }
 
 export function SearchScreen({
@@ -22,9 +23,10 @@ export function SearchScreen({
   go,
   onAddToCart,
   activeTag,
-  headerQuery,
+  headerQuery = "",
+  setHeaderQuery,
 }: SearchScreenProps) {
-  const [query, setQuery] = useState(headerQuery || "");
+  const query = headerQuery;
   const [sort, setSort] = useState("Mới nhất");
   const [filters, setFilters] = useState<FilterState>({
     cats: [],
@@ -32,26 +34,27 @@ export function SearchScreen({
     maxP: "",
     sizes: [],
     cond: 50,
+    rating: undefined,
     ai: false,
   });
 
   useEffect(() => {
     if (activeTag === "Tất cả" || !activeTag) {
-      setFilters({ cats: [], minP: "", maxP: "", sizes: [], cond: 50, ai: false });
+      setFilters({ cats: [], minP: "", maxP: "", sizes: [], cond: 50, rating: undefined, ai: false });
     } else if (activeTag === "Áo") {
-      setFilters({ cats: ["Áo"], minP: "", maxP: "", sizes: [], cond: 50, ai: false });
+      setFilters({ cats: ["Áo"], minP: "", maxP: "", sizes: [], cond: 50, rating: undefined, ai: false });
     } else if (activeTag === "Quần") {
-      setFilters({ cats: ["Quần"], minP: "", maxP: "", sizes: [], cond: 50, ai: false });
+      setFilters({ cats: ["Quần"], minP: "", maxP: "", sizes: [], cond: 50, rating: undefined, ai: false });
     } else if (activeTag === "Váy") {
-      setFilters({ cats: ["Váy"], minP: "", maxP: "", sizes: [], cond: 50, ai: false });
+      setFilters({ cats: ["Váy"], minP: "", maxP: "", sizes: [], cond: 50, rating: undefined, ai: false });
     } else if (activeTag === "Áo khoác") {
-      setFilters({ cats: ["Áo khoác"], minP: "", maxP: "", sizes: [], cond: 50, ai: false });
+      setFilters({ cats: ["Áo khoác"], minP: "", maxP: "", sizes: [], cond: 50, rating: undefined, ai: false });
     } else if (activeTag === "Phụ kiện") {
-      setFilters({ cats: ["Phụ kiện"], minP: "", maxP: "", sizes: [], cond: 50, ai: false });
+      setFilters({ cats: ["Phụ kiện"], minP: "", maxP: "", sizes: [], cond: 50, rating: undefined, ai: false });
     } else if (activeTag === "Độ mới >90%") {
-      setFilters({ cats: [], minP: "", maxP: "", sizes: [], cond: 90, ai: false });
+      setFilters({ cats: [], minP: "", maxP: "", sizes: [], cond: 90, rating: undefined, ai: false });
     } else if (activeTag === "Gần đây") {
-      setFilters({ cats: [], minP: "", maxP: "", sizes: [], cond: 50, ai: false });
+      setFilters({ cats: [], minP: "", maxP: "", sizes: [], cond: 50, rating: undefined, ai: false });
     }
   }, [activeTag]);
 
@@ -105,7 +108,8 @@ export function SearchScreen({
     const minPrice = filters.minP ? parseInt(filters.minP.replace(/\D/g, "")) : 0;
     const maxPrice = filters.maxP ? parseInt(filters.maxP.replace(/\D/g, "")) : Infinity;
     const matchesPrice = p.price >= minPrice && p.price <= maxPrice;
-    return matchesQuery && matchesCat && matchesSize && matchesCond && matchesPrice;
+    const matchesRating = !filters.rating || (p.sellerRating ?? 5) >= filters.rating;
+    return matchesQuery && matchesCat && matchesSize && matchesCond && matchesPrice && matchesRating;
   });
 
   const sortedProducts = [...filteredProducts].sort((a, b) => {
@@ -125,27 +129,7 @@ export function SearchScreen({
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: LINEN }}>
-      <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8">
-        <div className="mb-6">
-          <div
-            className="flex items-center gap-3 px-4 py-3 rounded-xl"
-            style={{ backgroundColor: CARD, border: `1.5px solid ${MUTED}` }}
-          >
-            <Search size={18} style={{ color: COFFEE }} />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Tìm sản phẩm..."
-              className="flex-1 bg-transparent text-sm outline-none"
-              style={{ color: ESPRESSO, ...ff }}
-            />
-            {query && (
-              <button onClick={() => setQuery("")} className="p-1 rounded-full hover:bg-gray-100">
-                <X size={16} style={{ color: COFFEE }} />
-              </button>
-            )}
-          </div>
-        </div>
+      <div className="w-full px-4 md:px-8 xl:px-10 py-8">
 
         {filters.ai && (
           <div
@@ -169,21 +153,60 @@ export function SearchScreen({
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-0 mb-6">
           <div>
-            <h2 className="text-xl font-bold" style={{ ...serif, color: ESPRESSO }}>
-              {query ? (
-                <>
-                  Kết quả cho <span style={{ color: T }}>"{query}"</span>
-                </>
-              ) : (
-                "Tất cả sản phẩm"
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h2 className="text-xl font-bold" style={{ ...serif, color: ESPRESSO }}>
+                {query ? (
+                  <>
+                    Kết quả tìm kiếm cho: <span style={{ color: T }}>"{query}"</span>
+                  </>
+                ) : (
+                  "Tất cả sản phẩm"
+                )}
+              </h2>
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setHeaderQuery?.("")}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-stone-200/80 hover:bg-stone-300 text-espresso transition-colors cursor-pointer"
+                  title="Xóa từ khóa tìm kiếm"
+                >
+                  <X size={13} />
+                  <span>Xóa tìm kiếm</span>
+                </button>
               )}
-            </h2>
+              {filters.rating && (
+                <button
+                  type="button"
+                  onClick={() => setFilters((f) => ({ ...f, rating: undefined }))}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100/90 text-amber-900 hover:bg-amber-200 transition-colors cursor-pointer"
+                  title="Xóa lọc đánh giá"
+                >
+                  <span>Shop {filters.rating}⭐ trở lên</span>
+                  <X size={13} />
+                </button>
+              )}
+              {(filters.minP || filters.maxP) && (
+                <button
+                  type="button"
+                  onClick={() => setFilters((f) => ({ ...f, minP: "", maxP: "" }))}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100/90 text-amber-900 hover:bg-amber-200 transition-colors cursor-pointer"
+                  title="Xóa lọc khoảng giá"
+                >
+                  <span>
+                    Giá: {filters.minP ? Number(filters.minP).toLocaleString("vi-VN") + "₫" : "0₫"} —{" "}
+                    {filters.maxP ? Number(filters.maxP).toLocaleString("vi-VN") + "₫" : "∞"}
+                  </span>
+                  <X size={13} />
+                </button>
+              )}
+            </div>
             <p className="text-sm mt-0.5" style={{ color: COFFEE, ...ff }}>
               {sortedProducts.length} sản phẩm
               {filters.cats.length > 0 ||
               filters.sizes.length > 0 ||
               filters.minP ||
-              filters.maxP
+              filters.maxP ||
+              filters.rating
                 ? " · Đã lọc"
                 : ""}
             </p>
@@ -230,7 +253,7 @@ export function SearchScreen({
               </div>
             )}
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-5">
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4 lg:gap-5">
               {sortedProducts.map((p) => (
                 <ProductCard key={p.id} product={p} onLike={onLike} go={go} onAddToCart={onAddToCart} />
               ))}

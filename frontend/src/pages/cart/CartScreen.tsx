@@ -25,44 +25,62 @@ export function CartScreen({
   const [promoApplied, setPromoApplied] = useState(false);
   const [promoError, setPromoError] = useState(false);
 
+  const isItemUnavailable = (item: { stock?: number; status?: string }) => {
+    return (item.stock !== undefined && item.stock <= 0) || item.status === "sold" || item.status === "archived";
+  };
+
   const allItems = cartGroups.flatMap((g) => g.items);
-  const checkedItems = allItems.filter((i) => i.checked);
-  const allChecked = allItems.length > 0 && allItems.every((i) => i.checked);
-  const someChecked = allItems.some((i) => i.checked);
+  const availableItems = allItems.filter((i) => !isItemUnavailable(i));
+  const unavailableItems = allItems.filter((i) => isItemUnavailable(i));
+  const checkedItems = availableItems.filter((i) => i.checked);
+  const allChecked = availableItems.length > 0 && availableItems.every((i) => i.checked);
+  const someChecked = checkedItems.length > 0;
 
   const subtotal = checkedItems.reduce((s, i) => s + i.price * i.qty, 0);
   const discount = promoApplied ? Math.round(subtotal * 0.1) : 0;
   const checkedSellers = new Set(checkedItems.map(i => i.seller)).size;
-  const ship = checkedSellers * 30000;
-  const total = subtotal - discount + ship;
+  const ship = checkedSellers > 0 ? checkedSellers * 30000 : 0;
+  const total = checkedItems.length > 0 ? subtotal - discount + ship : 0;
 
   const toggleAll = () => {
     const next = !allChecked;
     const newCart = cartGroups.map((g) => ({
       ...g,
-      items: g.items.map((i) => ({ ...i, checked: next })),
+      items: g.items.map((i) =>
+        isItemUnavailable(i) ? { ...i, checked: false } : { ...i, checked: next }
+      ),
     }));
     updateCart(newCart);
     for (const g of cartGroups) {
       for (const i of g.items) {
-        if (i.apiId) syncItem?.(i.apiId, { checked: next });
+        if (i.apiId && !isItemUnavailable(i)) syncItem?.(i.apiId, { checked: next });
       }
     }
   };
   const toggleGroup = (seller: string) => {
     const group = cartGroups.find((g) => g.seller === seller);
     if (!group) return;
-    const allGroupChecked = group.items.every((i) => i.checked);
+    const groupAvail = group.items.filter((i) => !isItemUnavailable(i));
+    if (groupAvail.length === 0) return;
+    const allGroupChecked = groupAvail.every((i) => i.checked);
     const newCart = cartGroups.map((g) =>
-      g.seller !== seller ? g : { ...g, items: g.items.map((i) => ({ ...i, checked: !allGroupChecked })) }
+      g.seller !== seller
+        ? g
+        : {
+            ...g,
+            items: g.items.map((i) =>
+              isItemUnavailable(i) ? { ...i, checked: false } : { ...i, checked: !allGroupChecked }
+            ),
+          }
     );
     updateCart(newCart);
     for (const i of group.items) {
-      if (i.apiId) syncItem?.(i.apiId, { checked: !allGroupChecked });
+      if (i.apiId && !isItemUnavailable(i)) syncItem?.(i.apiId, { checked: !allGroupChecked });
     }
   };
   const toggleItem = (seller: string, id: number) => {
     const target = cartGroups.find((g) => g.seller === seller)?.items.find((i) => i.id === id);
+    if (!target || isItemUnavailable(target)) return;
     const newCart = cartGroups.map((g) =>
       g.seller !== seller
         ? g
@@ -73,7 +91,8 @@ export function CartScreen({
   };
   const adjustQty = (seller: string, id: number, d: number) => {
     const target = cartGroups.find((g) => g.seller === seller)?.items.find((i) => i.id === id);
-    const newQty = target ? Math.max(1, Math.min(target.qty + d, target.stock || 1)) : 1;
+    if (!target || isItemUnavailable(target)) return;
+    const newQty = Math.max(1, Math.min(target.qty + d, target.stock || 1));
     const newCart = cartGroups.map((g) =>
       g.seller !== seller
         ? g
@@ -103,6 +122,16 @@ export function CartScreen({
       deleteItem?.(i.apiId as string);
     }
   };
+  const removeUnavailable = () => {
+    const toDelete = unavailableItems.filter((i) => i.apiId);
+    const newCart = cartGroups
+      .map((g) => ({ ...g, items: g.items.filter((i) => !isItemUnavailable(i)) }))
+      .filter((g) => g.items.length > 0);
+    updateCart(newCart);
+    for (const i of toDelete) {
+      deleteItem?.(i.apiId as string);
+    }
+  };
 
   const applyPromo = () => {
     if (!promo.trim()) return;
@@ -118,7 +147,7 @@ export function CartScreen({
   return (
     <div style={{ backgroundColor: LINEN, minHeight: "100vh" }}>
       <div style={{ backgroundColor: COFFEE, borderBottom: `2px solid rgba(0,0,0,0.15)` }}>
-        <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-4 flex items-center gap-3">
+        <div className="w-full px-4 md:px-8 xl:px-10 py-4 flex items-center gap-3">
           <ShoppingCart size={22} style={{ color: LINEN }} />
           <h1 className="text-xl font-bold italic" style={{ ...serif, color: LINEN }}>
             Giỏ hàng của tôi
@@ -132,7 +161,7 @@ export function CartScreen({
         </div>
       </div>
 
-      <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8">
+      <div className="w-full px-4 md:px-8 xl:px-10 py-8">
         {allItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-28 gap-5">
             <div
@@ -161,22 +190,37 @@ export function CartScreen({
           <div className="flex flex-col lg:flex-row gap-7 items-start">
             <div className="flex-1 w-full flex flex-col gap-4">
               <div
-                className="flex items-center gap-4 px-5 py-3 rounded-2xl"
+                className="flex flex-wrap items-center gap-4 px-5 py-3 rounded-2xl"
                 style={{ backgroundColor: CARD, border: `1px solid ${MUTED}` }}
               >
-                <BrandCheckbox checked={allChecked} onClick={toggleAll} />
+                <BrandCheckbox
+                  checked={allChecked}
+                  disabled={availableItems.length === 0}
+                  onClick={toggleAll}
+                />
                 <span className="text-sm font-semibold" style={{ color: ESPRESSO, ...ff }}>
-                  Chọn tất cả ({allItems.length} sản phẩm)
+                  Chọn tất cả ({availableItems.length} sản phẩm còn hàng)
                 </span>
-                {someChecked && (
-                  <button
-                    onClick={removeChecked}
-                    className="ml-auto text-xs font-semibold flex items-center gap-1 px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
-                    style={{ color: "#C0392B", backgroundColor: "#FDEDEC", ...ff }}
-                  >
-                    <Trash2 size={12} /> Xóa đã chọn ({checkedItems.length})
-                  </button>
-                )}
+                <div className="ml-auto flex items-center gap-2">
+                  {unavailableItems.length > 0 && (
+                    <button
+                      onClick={removeUnavailable}
+                      className="text-xs font-semibold flex items-center gap-1 px-3 py-1.5 rounded-lg transition-all hover:opacity-80 cursor-pointer"
+                      style={{ color: "#D97706", backgroundColor: "#FEF3C7", ...ff }}
+                    >
+                      <Trash2 size={12} /> Xóa {unavailableItems.length} SP hết hàng
+                    </button>
+                  )}
+                  {someChecked && (
+                    <button
+                      onClick={removeChecked}
+                      className="text-xs font-semibold flex items-center gap-1 px-3 py-1.5 rounded-lg transition-all hover:opacity-80 cursor-pointer"
+                      style={{ color: "#C0392B", backgroundColor: "#FDEDEC", ...ff }}
+                    >
+                      <Trash2 size={12} /> Xóa đã chọn ({checkedItems.length})
+                    </button>
+                  )}
+                </div>
               </div>
 
               {cartGroups.map((group) => {
@@ -199,7 +243,11 @@ export function CartScreen({
                       style={{ backgroundColor: SOFT, borderBottom: `1px solid ${MUTED}` }}
                     >
                       <BrandCheckbox
-                        checked={groupChecked}
+                        checked={
+                          group.items.filter((i) => !isItemUnavailable(i)).length > 0 &&
+                          group.items.filter((i) => !isItemUnavailable(i)).every((i) => i.checked)
+                        }
+                        disabled={group.items.filter((i) => !isItemUnavailable(i)).length === 0}
                         onClick={() => toggleGroup(group.seller)}
                       />
                       <div
@@ -224,145 +272,189 @@ export function CartScreen({
                       </span>
                     </div>
 
-                    {group.items.map((item, idx) => (
-                      <div
-                        key={`${item.id}-buy`}
-                        className="flex flex-col sm:flex-row sm:items-center gap-4 px-5 py-4"
-                        style={{
-                          borderBottom: idx < group.items.length - 1 ? `1px solid ${MUTED}55` : "none",
-                          backgroundColor: item.checked ? `${T}06` : CARD,
-                          transition: "background-color 0.15s",
-                        }}
-                      >
-                        <BrandCheckbox
-                          checked={item.checked}
-                          onClick={() => toggleItem(group.seller, item.id)}
-                        />
-
-                        <div className="relative flex-shrink-0">
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            style={{
-                              width: 88,
-                              height: 88,
-                              objectFit: "cover",
-                              borderRadius: 12,
-                              border: `1px solid ${MUTED}`,
-                            }}
-                          />
-                          <span
-                            className="absolute bottom-1.5 left-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                            style={{
-                              backgroundColor: ESPRESSO + "dd",
-                              color: LINEN,
-                              ...ff,
-                            }}
-                          >
-                            {item.condition}%
-                          </span>
-                        </div>
-
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p className="text-sm font-bold leading-snug" style={{ color: ESPRESSO, ...ff }}>
-                            {item.name}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <span
-                              className="text-xs px-2.5 py-0.5 rounded-full font-medium"
-                              style={{
-                                backgroundColor: SOFT,
-                                color: COFFEE,
-                                border: `1.5px solid ${MUTED}`,
-                                ...ff,
-                              }}
-                            >
-                              Size {item.size}
-                            </span>
-                            <span
-                              className="text-xs px-2.5 py-0.5 rounded-full font-medium"
-                              style={{
-                                backgroundColor: SOFT,
-                                color: COFFEE,
-                                border: `1.5px solid ${MUTED}`,
-                                ...ff,
-                              }}
-                            >
-                              Độ mới {item.condition}%
-                            </span>
-                          </div>
-                          <p className="text-xs mt-2" style={{ color: COFFEE, ...ff }}>
-                            Đơn giá:{" "}
-                            <span style={{ color: ESPRESSO, fontWeight: 600 }}>
-                              {fmt(item.price)}
-                            </span>
-                          </p>
-                        </div>
-
+                    {group.items.map((item, idx) => {
+                      const isUnavailable = isItemUnavailable(item);
+                      return (
                         <div
-                          className="flex items-center gap-0 rounded-xl overflow-hidden flex-shrink-0"
-                          style={{ border: `1.5px solid ${MUTED}` }}
+                          key={`${item.id}-buy`}
+                          className={`flex flex-col sm:flex-row sm:items-center gap-4 px-5 py-4 ${
+                            isUnavailable ? "opacity-75" : ""
+                          }`}
+                          style={{
+                            borderBottom: idx < group.items.length - 1 ? `1px solid ${MUTED}55` : "none",
+                            backgroundColor: isUnavailable ? "#F9F9FB" : item.checked ? `${T}06` : CARD,
+                            transition: "background-color 0.15s",
+                          }}
                         >
-                          <button
-                            onClick={() => adjustQty(group.seller, item.id, -1)}
-                            className="flex items-center justify-center transition-all hover:opacity-70"
-                            style={{ width: 34, height: 34, backgroundColor: SOFT, color: COFFEE }}
-                          >
-                            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                              <path d="M2 6.5h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                            </svg>
-                          </button>
-                          <span
-                            className="flex items-center justify-center text-sm font-bold"
-                            style={{
-                              width: 38,
-                              height: 34,
-                              color: ESPRESSO,
-                              backgroundColor: CARD,
-                              borderLeft: `1.5px solid ${MUTED}`,
-                              borderRight: `1.5px solid ${MUTED}`,
-                              ...ff,
-                            }}
-                          >
-                            {item.qty}
-                          </span>
-                          <button
-                            onClick={() => adjustQty(group.seller, item.id, 1)}
-                            disabled={item.qty >= (item.stock || 1)}
-                            className="flex items-center justify-center transition-all hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
-                            style={{ width: 34, height: 34, backgroundColor: item.qty >= (item.stock || 1) ? MUTED : T, color: item.qty >= (item.stock || 1) ? COFFEE : LINEN }}
-                          >
-                            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                              <path
-                                d="M6.5 2v9M2 6.5h9"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                              />
-                            </svg>
-                          </button>
-                        </div>
+                          <BrandCheckbox
+                            checked={item.checked && !isUnavailable}
+                            disabled={isUnavailable}
+                            onClick={() => toggleItem(group.seller, item.id)}
+                          />
 
-                        <div className="text-right flex-shrink-0" style={{ minWidth: 110 }}>
-                          <p className="text-base font-bold" style={{ ...serif, color: T }}>
-                            {fmt(item.price * item.qty)}
-                          </p>
-                          {item.qty > 1 && (
-                            <p className="text-xs mt-0.5" style={{ color: COFFEE, ...ff }}>
-                              {fmt(item.price)} × {item.qty}
+                          <div className="relative flex-shrink-0">
+                            <img
+                              src={item.image}
+                              alt={item.name}
+                              style={{
+                                width: 88,
+                                height: 88,
+                                objectFit: "cover",
+                                borderRadius: 12,
+                                border: `1px solid ${MUTED}`,
+                                filter: isUnavailable ? "grayscale(60%)" : "none",
+                              }}
+                            />
+                            {isUnavailable ? (
+                              <div className="absolute inset-0 bg-black/60 rounded-xl flex items-center justify-center p-1 text-center">
+                                <span className="text-white text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/80 tracking-wide">
+                                  {item.status === "sold" ? "ĐÃ BÁN" : "HẾT HÀNG"}
+                                </span>
+                              </div>
+                            ) : (
+                              <span
+                                className="absolute bottom-1.5 left-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                                style={{
+                                  backgroundColor: ESPRESSO + "dd",
+                                  color: LINEN,
+                                  ...ff,
+                                }}
+                              >
+                                {item.condition}%
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p
+                              className={`text-sm font-bold leading-snug ${isUnavailable ? "text-stone-500 line-through" : ""}`}
+                              style={{ color: isUnavailable ? undefined : ESPRESSO, ...ff }}
+                            >
+                              {item.name}
                             </p>
+                            {isUnavailable ? (
+                              <div className="mt-1.5 flex items-center gap-2">
+                                <span className="text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
+                                  ⚠️ Sản phẩm đã hết hàng hoặc đã bán
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <span
+                                  className="text-xs px-2.5 py-0.5 rounded-full font-medium"
+                                  style={{
+                                    backgroundColor: SOFT,
+                                    color: COFFEE,
+                                    border: `1.5px solid ${MUTED}`,
+                                    ...ff,
+                                  }}
+                                >
+                                  Size {item.size}
+                                </span>
+                                <span
+                                  className="text-xs px-2.5 py-0.5 rounded-full font-medium"
+                                  style={{
+                                    backgroundColor: SOFT,
+                                    color: COFFEE,
+                                    border: `1.5px solid ${MUTED}`,
+                                    ...ff,
+                                  }}
+                                >
+                                  Độ mới {item.condition}%
+                                </span>
+                              </div>
+                            )}
+                            <p className="text-xs mt-2" style={{ color: COFFEE, ...ff }}>
+                              Đơn giá:{" "}
+                              <span style={{ color: isUnavailable ? "#888" : ESPRESSO, fontWeight: 600 }}>
+                                {fmt(item.price)}
+                              </span>
+                            </p>
+                          </div>
+
+                          {isUnavailable ? (
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-stone-400 font-medium italic">Không thể mua</span>
+                              <button
+                                onClick={() => removeItem(group.seller, item.id)}
+                                title="Xóa khỏi giỏ"
+                                className="p-2 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div
+                              className="flex items-center gap-0 rounded-xl overflow-hidden flex-shrink-0"
+                              style={{ border: `1.5px solid ${MUTED}` }}
+                            >
+                              <button
+                                onClick={() => adjustQty(group.seller, item.id, -1)}
+                                className="flex items-center justify-center transition-all hover:opacity-70 cursor-pointer"
+                                style={{ width: 34, height: 34, backgroundColor: SOFT, color: COFFEE }}
+                              >
+                                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                                  <path d="M2 6.5h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                                </svg>
+                              </button>
+                              <span
+                                className="flex items-center justify-center text-sm font-bold"
+                                style={{
+                                  width: 38,
+                                  height: 34,
+                                  color: ESPRESSO,
+                                  backgroundColor: CARD,
+                                  borderLeft: `1.5px solid ${MUTED}`,
+                                  borderRight: `1.5px solid ${MUTED}`,
+                                  ...ff,
+                                }}
+                              >
+                                {item.qty}
+                              </span>
+                              <button
+                                onClick={() => adjustQty(group.seller, item.id, 1)}
+                                disabled={item.qty >= (item.stock || 1)}
+                                className="flex items-center justify-center transition-all hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                style={{ width: 34, height: 34, backgroundColor: item.qty >= (item.stock || 1) ? MUTED : T, color: item.qty >= (item.stock || 1) ? COFFEE : LINEN }}
+                              >
+                                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                                  <path
+                                    d="M6.5 2v9M2 6.5h9"
+                                    stroke="currentColor"
+                                    strokeWidth="1.6"
+                                    strokeLinecap="round"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
+                          )}
+
+                          {!isUnavailable && (
+                            <div className="text-right flex-shrink-0" style={{ minWidth: 110 }}>
+                              <p className="text-base font-bold" style={{ ...serif, color: T }}>
+                                {fmt(item.price * item.qty)}
+                              </p>
+                              {item.qty > 1 && (
+                                <p className="text-xs mt-0.5" style={{ color: COFFEE, ...ff }}>
+                                  ({fmt(item.price)} × {item.qty})
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          {!isUnavailable && (
+                            <button
+                              onClick={() => removeItem(group.seller, item.id)}
+                              className="flex-shrink-0 p-2 rounded-xl transition-all hover:opacity-80 ml-1 cursor-pointer"
+                              style={{ backgroundColor: "#FDEDEC" }}
+                              title="Xóa sản phẩm"
+                            >
+                              <Trash2 size={15} style={{ color: "#C0392B" }} />
+                            </button>
                           )}
                         </div>
-
-                        <button
-                          onClick={() => removeItem(group.seller, item.id)}
-                          className="flex-shrink-0 p-2 rounded-xl transition-all hover:opacity-80 ml-1"
-                          style={{ backgroundColor: "#FDEDEC" }}
-                        >
-                          <Trash2 size={15} style={{ color: "#C0392B" }} />
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })}
