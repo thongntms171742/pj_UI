@@ -151,3 +151,41 @@ Scope: mirror the same logo + mobile-buyer fixes into `mobile/` (Expo / RN). The
 
 ### Known
 - Mobile `SearchScreen` TS error is pre-existing and out of scope; leave for a follow-up.
+
+## 2026-10-03: Mobile Logo → swap to canonical Thriftit logo
+User reported the launcher icon / in-app mark was still rendering as a flat "T" and asked for the entire mobile app to use the canonical Thriftit logo (https://i.postimg.cc/44tgtTTG/thrift-logo.png). Scope: align all four bundled brand PNGs to that asset and point `ThriftLogo.tsx` at the explicit canonical file.
+
+### Changed
+- **`mobile/src/components/ThriftLogo.tsx`**: now `require('../../assets/thrift-logo.png')` (the explicit canonical brand file), updated the JSDoc to document the 800×800 square layout and the offline-by-default rationale. No public API change — `size`, `withText`, `style`, `textColor` props unchanged.
+- **`mobile/assets/icon.png`**: overwritten with the Thriftit logo (800×800 square, contains the circular mark + "thrift it!" wordmark). This is the iOS/Android launcher icon (`app.json` already points to it).
+- **`mobile/assets/adaptive-icon.png`**: overwritten with the same Thriftit logo. Used as the Android adaptive-icon foreground (`app.json` references it).
+- **`mobile/assets/favicon.png`**: overwritten with the same Thriftit logo. Used as the web favicon (`app.json` references it).
+
+### Added
+- **`mobile/assets/thrift-logo.png`** — the canonical 800×800 brand asset (downloaded from `https://i.postimg.cc/44tgtTTG/thrift-logo.png`). Stored as its own file so the in-app mark does not have to share the launcher icon — they can evolve independently.
+
+### Not changed
+- **`mobile/assets/splash.png`** — user chose to keep the existing vintage clothes splash image.
+- **`mobile/app.json`** — asset paths (`./assets/icon.png`, `./assets/adaptive-icon.png`, `./assets/favicon.png`, `./assets/splash.png`) all unchanged; only the file contents were updated.
+- **`mobile/src/screens/auth/LoginScreen.tsx`**, **`mobile/src/screens/auth/RegisterScreen.tsx`**, **`mobile/src/screens/account/AccountScreen.tsx`** — no caller changes; `ThriftLogo` API surface is identical.
+- **`frontend/`** — web app not touched. If web ever shows "T" intermittently, mirror this same change on the web side.
+
+### Verification
+- `cd mobile && npx tsc --noEmit` → exit 0 (no errors).
+
+## 2026-10-03 (later): Fix `Unable to resolve` for ThriftLogo asset
+After the asset swap, the Metro bundler started returning `500 Internal Server Error` for `index.bundle?platform=web&...` with the symptom `Unable to resolve "../../../assets/thrift-logo.png" from "src\components\ThriftLogo.tsx"`. Root cause: `ThriftLogo.tsx` lives at `mobile/src/components/`; the relative path `../../../assets/thrift-logo.png` (three `..`) resolves **above** the project root (i.e. into the parent directory of `mobile/`), where the file does not exist. The correct path is `../../assets/thrift-logo.png` (two `..`).
+
+### Changed
+- **`mobile/src/components/ThriftLogo.tsx`**:
+  - `require('../../../assets/thrift-logo.png')` → `require('../../assets/thrift-logo.png')`.
+  - Added a comment block in the source documenting the path gotcha (`mobile/src/components/` → `../..` = `mobile/`).
+
+### Not changed
+- No code logic or visual API changes; only the relative path constant.
+
+### Verification
+- `cd mobile && npx tsc --noEmit` → exit 0 (no errors).
+- Restarted Expo (`expo start --clear`, killed all stale node processes, removed `.expo` and `node_modules/.cache`).
+- Subsequent Metro requests for `ThriftLogo.tsx`, `AppEntry.js`, and `index.js` all return `Web Bundled … (modules)` instead of `Web Bundling failed`.
+- `Invoke-WebRequest http://localhost:8081/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app` → `200 OK`, 8.57 MB bundle file written locally.
