@@ -122,6 +122,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       errors.push(e instanceof Error ? e.message : String(e));
     }
+    try {
+      // BE 2026-10-03: clear cached address book on logout so the next
+      // login starts from a clean slate.
+      await removeStored(STORAGE_KEYS.addresses);
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
+    }
 
     if (errors.length > 0) {
       // Surface a non-blocking warning; session is already cleared.

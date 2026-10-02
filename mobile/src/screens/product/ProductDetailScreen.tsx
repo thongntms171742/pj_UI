@@ -16,6 +16,8 @@ import { useProduct } from '../../hooks/queries';
 import { sellerApi } from '../../api/endpoints';
 import { QuantityStepper } from '../../components/QuantityStepper';
 import { EmptyState } from '../../components/EmptyState';
+import { PlaceholderImage } from '../../components/PlaceholderImage';
+import { LetterAvatar } from '../../components/LetterAvatar';
 import { useCart } from '../../context/CartContext';
 import { adaptSeller } from '../../adapters';
 import {
@@ -35,11 +37,6 @@ import type { HomeStackParamList, RootTabParamList } from '../../navigation/type
 
 type Route = RouteProp<HomeStackParamList, 'ProductDetail'>;
 type Nav = NativeStackNavigationProp<HomeStackParamList>;
-
-const PLACEHOLDER_REVIEW_IMAGES = [
-  'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=520&fit=crop',
-  'https://images.unsplash.com/photo-1495105787522-5334e3ffa0ef?w=400&h=520&fit=crop',
-];
 
 export function ProductDetailScreen() {
   const route = useRoute<Route>();
@@ -138,7 +135,13 @@ export function ProductDetailScreen() {
       : 'Đã qua sử dụng';
   const condColor = product.condition >= 90 ? success : product.condition >= 75 ? T : '#E67E22';
 
-  const images = [product.image, ...PLACEHOLDER_REVIEW_IMAGES];
+  // BE 2026-10-03: only use the product image. If it's empty, the carousel
+  // is just one slot — never fabricate thumbnail images from a third party.
+  // (FE removed the Unsplash placeholder list and replaced it with
+  // <PlaceholderImage/>; on mobile we mirror by hiding the carousel
+  // entirely when no image is present.)
+  const hasImage = Boolean(product.image);
+  const images = hasImage ? [product.image as string] : [];
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
@@ -155,33 +158,49 @@ export function ProductDetailScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
-        {/* Image carousel */}
+        {/* Image carousel — BE 2026-10-03: no third-party fallbacks. If the
+            product has no image, render a single PlaceholderImage in the
+            hero and skip the thumbnail strip entirely. */}
         <View style={styles.imageWrap}>
-          <Image source={{ uri: images[selectedImg] }} style={styles.heroImg} resizeMode="cover" />
+          {hasImage ? (
+            <Image
+              source={{ uri: images[selectedImg] }}
+              style={styles.heroImg}
+              resizeMode="cover"
+            />
+          ) : (
+            <PlaceholderImage
+              width="100%"
+              height="100%"
+              label="Chưa có ảnh"
+            />
+          )}
           {isSold ? (
             <View style={styles.soldOverlay}>
               <Text style={styles.soldText}>ĐÃ BÁN</Text>
             </View>
           ) : null}
         </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 8 }}
-        >
-          {images.map((img, i) => (
-            <TouchableOpacity
-              key={i}
-              onPress={() => setSelectedImg(i)}
-              style={[
-                styles.thumb,
-                selectedImg === i && { borderColor: T },
-              ]}
-            >
-              <Image source={{ uri: img }} style={styles.thumbImg} />
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {images.length > 1 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 8 }}
+          >
+            {images.map((img, i) => (
+              <TouchableOpacity
+                key={i}
+                onPress={() => setSelectedImg(i)}
+                style={[
+                  styles.thumb,
+                  selectedImg === i && { borderColor: T },
+                ]}
+              >
+                <Image source={{ uri: img }} style={styles.thumbImg} />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : null}
 
         {/* Info */}
         <View style={styles.infoSection}>
@@ -209,18 +228,28 @@ export function ProductDetailScreen() {
 
         {/* Seller */}
         {sellerInfo ? (
-          <View style={styles.sellerCard}>
+          // 2026-10-03: tap the seller card to open the public Shop
+          // profile (BE /api/sellers/:handle). The chevron makes the
+          // tappable affordance obvious on small screens.
+          <TouchableOpacity
+            style={styles.sellerCard}
+            activeOpacity={0.85}
+            onPress={() =>
+              navigation.navigate('Shop', { handle: sellerInfo.handle })
+            }
+          >
             <Text style={[styles.sectionLabel, { color: MUTED }]}>NGƯỜI BÁN</Text>
             <View style={styles.sellerRow}>
-              <View style={styles.sellerAvatar}>
-                {sellerInfo.avatar ? (
-                  <Image source={{ uri: sellerInfo.avatar }} style={{ width: '100%', height: '100%' }} />
-                ) : (
-                  <Text style={{ color: LINEN, fontWeight: '700' }}>
-                    {sellerInfo.name.charAt(0).toUpperCase()}
-                  </Text>
-                )}
-              </View>
+              {sellerInfo.avatar ? (
+                <Image
+                  source={{ uri: sellerInfo.avatar }}
+                  style={styles.sellerAvatarImg}
+                />
+              ) : (
+                // BE 2026-10-03: deterministic letter avatar instead of an
+                // empty circle with a tiny initial.
+                <LetterAvatar name={sellerInfo.name} size={50} />
+              )}
               <View style={{ flex: 1 }}>
                 <Text style={styles.sellerName}>{sellerInfo.name}</Text>
                 <Text style={styles.sellerHandle}>@{sellerInfo.handle}</Text>
@@ -231,8 +260,13 @@ export function ProductDetailScreen() {
                   </Text>
                 </View>
               </View>
+              <ChevronLeft
+                size={18}
+                color={COFFEE}
+                style={{ transform: [{ rotate: '180deg' }] }}
+              />
             </View>
-          </View>
+          </TouchableOpacity>
         ) : null}
 
         {/* Trust badges */}
@@ -437,6 +471,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  sellerAvatarImg: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: COFFEE,
   },
   sellerName: {
     color: ESPRESSO,

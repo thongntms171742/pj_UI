@@ -9,6 +9,9 @@ import { api, ApiProduct, ApiSeller, ApiCartItem, ApiOrder, ApiNotification, Api
 // Mirrors frontend addressApi. Same 4 endpoints —
 // `GET/POST/PATCH/DELETE /api/users/me/addresses`. See
 // docs/API_CONTRACT.md §13 Users for payload contract.
+//
+// 2026-10-03: Extended to support 2-level post-merger CAS picker
+// (`province` + `ward`). `district` is kept as a backward-compat alias.
 export type ApiAddress = {
   id: string;
   label?: string;
@@ -16,9 +19,17 @@ export type ApiAddress = {
   phone: string;
   address: string;
   ward?: string;
-  district?: string;
+  /** CAS commune id (e.g. "1_2678") — new in 2026-10-03. */
+  wardId?: string;
+  /** Province/City name (legacy `province` string). */
   province?: string;
+  /** CAS province id (e.g. "1") — new in 2026-10-03. */
+  provinceId?: string;
+  /** @deprecated kept as alias for backward compatibility. */
+  district?: string;
   isDefault?: boolean;
+  /** Effective date for the address snapshot (CAS proxy). */
+  effectiveDate?: string;
 };
 
 export type ApiAddressInput = {
@@ -27,9 +38,12 @@ export type ApiAddressInput = {
   phone: string;
   address: string;
   ward?: string;
-  district?: string;
+  wardId?: string;
   province?: string;
+  provinceId?: string;
+  district?: string;
   isDefault?: boolean;
+  effectiveDate?: string;
 };
 
 export const addressApi = {
@@ -39,6 +53,26 @@ export const addressApi = {
   update: (id: string, data: Partial<ApiAddressInput>) =>
     api.patch<{ address: ApiAddress }>(`/users/me/addresses/${id}`, data),
   remove: (id: string) => api.delete<{ ok: true }>(`/users/me/addresses/${id}`),
+};
+
+// ── Address Catalog (CAS proxy, BE 2026-10-03) ──
+// Mirrors frontend `useAddressCatalog`. Provinces + communes are loaded
+// once and cached on the client. Endpoint contract:
+//   GET /api/addresses/provinces          → { data: ApiProvince[], effectiveDate }
+//   GET /api/addresses/communes           → { data: ApiCommune[],  effectiveDate }
+//   GET /api/addresses/provinces/:pid/communes → { data: ApiCommune[], effectiveDate }
+export type ApiProvince = { id: string; name: string };
+export type ApiCommune = { id: string; name: string; provinceId?: string };
+export type ApiAddressesCatalog = {
+  data: ApiProvince[] | ApiCommune[];
+  effectiveDate: string;
+};
+
+export const addressCatalogApi = {
+  provinces: () => api.get<ApiAddressesCatalog>('/addresses/provinces'),
+  communes: () => api.get<ApiAddressesCatalog>('/addresses/communes'),
+  communesByProvince: (provinceId: string) =>
+    api.get<ApiAddressesCatalog>(`/addresses/provinces/${provinceId}/communes`),
 };
 
 // ── Auth ──
@@ -132,4 +166,14 @@ export const paymentApi = {
 export const notificationApi = {
   list: () => api.get<{ notifications: ApiNotification[] }>('/notifications'),
   markRead: (id: string) => api.patch<{ ok: true }>(`/notifications/${id}/read`),
+};
+
+// ── AI (BE 2026-10-03) ──
+// Mirrors frontend `api.post('/ai/search', { query })`. Used by the
+// SearchScreen AI Smart Search toggle. When the AI returns no results the
+// endpoint resolves with `{ products: [] }` and the caller falls back to
+// the regular list.
+export const aiApi = {
+  search: (query: string) =>
+    api.post<{ products: ApiProduct[] }>('/ai/search', { query }),
 };

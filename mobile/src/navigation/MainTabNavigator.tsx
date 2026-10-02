@@ -5,12 +5,14 @@ import { Home as HomeIcon, ShoppingCart, Bell, User } from 'lucide-react-native'
 import { HomeScreen } from '../screens/home/HomeScreen';
 import { SearchScreen } from '../screens/search/SearchScreen';
 import { ProductDetailScreen } from '../screens/product/ProductDetailScreen';
+import { ShopScreen } from '../screens/shop/ShopScreen';
 import { CartScreen } from '../screens/cart/CartScreen';
 import { CheckoutScreen } from '../screens/checkout/CheckoutScreen';
 import { OrderDetailScreen } from '../screens/orders/OrderDetailScreen';
 import { ReviewScreen } from '../screens/orders/ReviewScreen';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
 import { AccountScreen } from '../screens/account/AccountScreen';
+import { AddressBookScreen } from '../screens/account/AddressBookScreen';
 import { T, COFFEE, MUTED, LINEN } from '../theme/colors';
 import type {
   HomeStackParamList,
@@ -32,6 +34,7 @@ function HomeStackNav() {
       <HomeStack.Screen name="HomeMain" component={HomeScreen} />
       <HomeStack.Screen name="SearchMain" component={SearchScreen} />
       <HomeStack.Screen name="ProductDetail" component={ProductDetailScreen} />
+      <HomeStack.Screen name="Shop" component={ShopScreen} />
     </HomeStack.Navigator>
   );
 }
@@ -60,6 +63,7 @@ function AccountStackNav() {
   return (
     <AccountStack.Navigator screenOptions={{ headerShown: false }}>
       <AccountStack.Screen name="AccountMain" component={AccountScreen} />
+      <AccountStack.Screen name="AddressBook" component={AddressBookScreen} />
       <AccountStack.Screen name="OrderDetail" component={OrderDetailScreen} />
       <AccountStack.Screen name="Review" component={ReviewScreen} />
     </AccountStack.Navigator>

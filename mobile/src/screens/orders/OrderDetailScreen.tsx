@@ -577,6 +577,16 @@ export function OrderDetailScreen() {
           <Text style={styles.recipientName}>{order.shippingName}</Text>
           <Text style={styles.recipientInfo}>{order.shippingPhone}</Text>
           <Text style={styles.recipientInfo}>{order.shippingAddress}</Text>
+          {/* BE 2026-10-03 — address snapshot (province / commune names).
+              These come from the order document so the historical record
+              stays stable even if CAS data is updated later. */}
+          {(order.shippingCommuneName || order.shippingProvinceName) ? (
+            <Text style={styles.snapshotInfo}>
+              {[order.shippingCommuneName, order.shippingProvinceName]
+                .filter(Boolean)
+                .join(', ')}
+            </Text>
+          ) : null}
           <View style={styles.divider} />
           <Text style={styles.paymentLine}>
             Phương thức:{' '}
@@ -862,6 +872,7 @@ const styles = StyleSheet.create({
   cardTitle: { color: ESPRESSO, fontSize: 15, fontWeight: '700', marginBottom: 10 },
   recipientName: { color: ESPRESSO, fontWeight: '700', fontSize: 14 },
   recipientInfo: { color: COFFEE, fontSize: 13, marginTop: 4 },
+  snapshotInfo: { color: COFFEE, fontSize: 12, marginTop: 4, fontStyle: 'italic' },
   paymentLine: { color: COFFEE, fontSize: 12, marginTop: 6 },
   divider: { height: 1, backgroundColor: MUTED, marginVertical: 12 },
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },

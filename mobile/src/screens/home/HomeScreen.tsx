@@ -16,16 +16,14 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useProducts, useSellers } from '../../hooks/queries';
 import { ProductCard } from '../../components/ProductCard';
 import { ProductCardSkeleton } from '../../components/Skeleton';
+import { LetterAvatar } from '../../components/LetterAvatar';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
 import { T, ESPRESSO, COFFEE, LINEN, MUTED, CARD, serif } from '../../theme/colors';
 import type { Product, Seller } from '../../types';
-import { FILTER_TAGS } from '../../types/filters';
 import type { HomeStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'HomeMain'>;
-
-const CATEGORIES = ['Tất cả', 'Áo', 'Quần', 'Váy', 'Áo khoác', 'Phụ kiện', 'Giày', 'Túi'];
 
 export function HomeScreen() {
   const navigation = useNavigation<Nav>();
@@ -113,24 +111,6 @@ export function HomeScreen() {
           </View>
         </View>
 
-        {/* Filter chips */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
-        >
-          {FILTER_TAGS.map((tag) => (
-            <TouchableOpacity
-              key={tag}
-              style={styles.chip}
-              activeOpacity={0.85}
-              onPress={() => navigation.navigate('SearchMain')}
-            >
-              <Text style={styles.chipText}>{tag}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
         {/* Featured products */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -148,7 +128,9 @@ export function HomeScreen() {
           {loading ? (
             <View style={styles.grid}>
               {[1, 2, 3, 4].map((i) => (
-                <ProductCardSkeleton key={i} />
+                <View key={i} style={styles.gridCell}>
+                  <ProductCardSkeleton />
+                </View>
               ))}
             </View>
           ) : !products || products.length === 0 ? (
@@ -159,33 +141,17 @@ export function HomeScreen() {
           ) : (
             <View style={styles.grid}>
               {products.slice(0, 8).map((p) => (
-                <ProductCard
-                  key={p.id}
-                  product={{ ...p, liked: likedIds.has(p.id) }}
-                  onPress={() => handleProductPress(p)}
-                  onLike={toggleLike}
-                  onAddToCart={onAddToCart}
-                />
+                <View key={p.id} style={styles.gridCell}>
+                  <ProductCard
+                    product={{ ...p, liked: likedIds.has(p.id) }}
+                    onPress={() => handleProductPress(p)}
+                    onLike={toggleLike}
+                    onAddToCart={onAddToCart}
+                  />
+                </View>
               ))}
             </View>
           )}
-        </View>
-
-        {/* Categories */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, serif]}>Khám phá theo danh mục</Text>
-          <View style={styles.catGrid}>
-            {CATEGORIES.map((cat) => (
-              <TouchableOpacity
-                key={cat}
-                style={styles.catPill}
-                activeOpacity={0.85}
-                onPress={() => navigation.navigate('SearchMain')}
-              >
-                <Text style={styles.catPillText}>{cat}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
 
         {/* Trusted sellers */}
@@ -205,7 +171,12 @@ export function HomeScreen() {
               keyExtractor={(s) => String(s.id)}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 16 }}
-              renderItem={({ item }) => <SellerCardMini seller={item} />}
+              renderItem={({ item }) => (
+                <SellerCardMini
+                  seller={item}
+                  onPress={() => navigation.navigate('Shop', { handle: item.handle })}
+                />
+              )}
             />
           ) : null}
         </View>
@@ -216,23 +187,29 @@ export function HomeScreen() {
   );
 }
 
-function SellerCardMini({ seller }: { seller: Seller }) {
+function SellerCardMini({
+  seller,
+  onPress,
+}: {
+  seller: Seller;
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.sellerCard}>
-      <View style={styles.sellerAvatar}>
-        {seller.avatar ? (
-          <Image source={{ uri: seller.avatar }} style={{ width: '100%', height: '100%' }} />
-        ) : (
-          <Text style={{ color: LINEN, fontWeight: '700', fontSize: 18 }}>
-            {seller.name.charAt(0).toUpperCase()}
-          </Text>
-        )}
-      </View>
+    <TouchableOpacity style={styles.sellerCard} activeOpacity={0.85} onPress={onPress}>
+      {seller.avatar ? (
+        <Image
+          source={{ uri: seller.avatar }}
+          style={styles.sellerAvatarImg}
+        />
+      ) : (
+        // BE 2026-10-03: deterministic letter avatar (FE mirrors this).
+        <LetterAvatar name={seller.name} size={56} />
+      )}
       <Text numberOfLines={1} style={styles.sellerName}>
         {seller.name}
       </Text>
       <Text style={styles.sellerMeta}>⭐ {seller.rating.toFixed(1)} · {seller.transactions} GD</Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -314,24 +291,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
-  filterRow: {
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: MUTED,
-    marginRight: 8,
-  },
-  chipText: {
-    color: ESPRESSO,
-    fontSize: 12,
-    fontWeight: '600',
-  },
   section: {
     paddingHorizontal: 16,
     marginTop: 16,
@@ -360,7 +319,16 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    // 2026-10-03: paired with `gridCell` (width 50%) so cards always form a
+    // strict 2-column grid. The previous `ProductCard` style had `flex: 1`
+    // which caused the trailing card on an odd row (3 products) to stretch
+    // to full width. Wrapping each card in a fixed 50% cell keeps every
+    // card the same size regardless of count.
     marginHorizontal: -4,
+  },
+  gridCell: {
+    width: '50%',
+    padding: 4,
   },
   emptyBox: {
     paddingVertical: 40,
@@ -375,24 +343,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 13,
   },
-  catGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  catPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: MUTED,
-  },
-  catPillText: {
-    color: ESPRESSO,
-    fontSize: 13,
-    fontWeight: '600',
-  },
   sellerCard: {
     width: 140,
     padding: 12,
@@ -403,14 +353,11 @@ const styles = StyleSheet.create({
     marginRight: 10,
     alignItems: 'center',
   },
-  sellerAvatar: {
+  sellerAvatarImg: {
     width: 56,
     height: 56,
     borderRadius: 28,
     backgroundColor: COFFEE,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
     marginBottom: 8,
   },
   sellerName: {

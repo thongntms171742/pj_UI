@@ -10,6 +10,9 @@ export const STORAGE_KEYS = {
   likedProducts: 'thriftit_likedProducts',
   cart: 'thriftit_cart',
   userRole: 'thriftit_userRole',
+  /** BE 2026-10-03: shadow of the user's address book so a hot reload
+   * keeps the Address Book tab populated while the network refresh runs. */
+  addresses: 'thriftit_addresses',
 } as const;
 
 export async function getStoredJSON<T>(key: string): Promise<T | null> {

@@ -188,6 +188,12 @@ export type ApiSeller = {
   totalRevenue?: number;
   commissionRate?: number;
   status?: 'active' | 'pending_approval' | 'suspended';
+  // BE 2026-10-03: profile fields forwarded by the Shop screen so we
+  // don't need a second roundtrip. All optional — older API versions
+  // just won't populate them.
+  joinedAt?: string;
+  responseRate?: number;
+  followers?: number;
 };
 
 export type ApiCartItem = {
@@ -251,6 +257,14 @@ export type ApiOrder = {
   shippingName?: string;
   shippingPhone?: string;
   shippingAddress?: string;
+  /** BE 2026-10-03: address snapshot (province/commune ids + names) so the
+   * historical record of an order does not change when CAS data updates. */
+  shippingProvinceId?: string;
+  shippingProvinceName?: string;
+  shippingCommuneId?: string;
+  shippingCommuneName?: string;
+  /** Effective date used when resolving the snapshot (CAS proxy). */
+  addressEffectiveDate?: string;
   trackingNumber?: string;
   shippingProvider?: string;
   idempotencyKey?: string;

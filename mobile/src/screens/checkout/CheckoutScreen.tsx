@@ -1,8 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -10,11 +9,13 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, CheckCircle } from 'lucide-react-native';
+import { ChevronLeft, CheckCircle, MapPin } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
+import { useAddress } from '../../context/AddressContext';
+import { AddressPickerModal } from '../../components/AddressPickerModal';
 import { T, ESPRESSO, COFFEE, LINEN, MUTED, CARD, SOFT, serif } from '../../theme/colors';
 import { fmt } from '../../utils/format';
 import type { CartStackParamList } from '../../navigation/types';
@@ -26,13 +27,47 @@ export function CheckoutScreen() {
   const navigation = useNavigation<Nav>();
   const { cartGroups, placeOrder } = useCart();
   const { session } = useAuth();
+  // BE 2026-10-03: pull the buyer's address book + default. The address
+  // book is the single source of truth for recipient info — the form no
+  // longer exposes free-form name/phone/address inputs.
+  const { addresses, defaultAddress, addAddress } = useAddress();
 
   const [step, setStep] = useState<'address' | 'review'>('address');
+  // Recipient fields are derived from the chosen address and mirrored
+  // into local state so the existing `placeOrder` payload contract (which
+  // expects fullName/phone/address strings) is preserved. Users no longer
+  // edit these directly.
   const [fullName, setFullName] = useState(session?.name ?? '');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  /**
+   * Auto-fill from the default address when the screen mounts AND when the
+   * default changes (e.g. user just added a new default from the Address
+   * Book tab and came back, or added inline via the picker). The "only
+   * fill empty" guard is kept for safety, but in practice these three
+   * state fields are owned entirely by the address book.
+   */
+  useEffect(() => {
+    if (!defaultAddress) return;
+    setFullName((cur) => (cur ? cur : defaultAddress.name));
+    setPhone((cur) => (cur ? cur : defaultAddress.phone));
+    const composed = [defaultAddress.address, defaultAddress.ward, defaultAddress.province]
+      .filter(Boolean)
+      .join(', ');
+    setAddress((cur) => (cur ? cur : composed));
+  }, [defaultAddress]);
+
+  const onPickSaved = (a: (typeof addresses)[number]) => {
+    setFullName(a.name);
+    setPhone(a.phone);
+    const composed = [a.address, a.ward, a.province].filter(Boolean).join(', ');
+    setAddress(composed);
+    setPickerOpen(false);
+  };
 
   const checkedItems = useMemo(
     () =>
@@ -47,8 +82,16 @@ export function CheckoutScreen() {
   const total = subtotal + ship;
 
   const validate = (): boolean => {
+    // 2026-10-03 — the address book is now the only source of recipient
+    // info. If the buyer has not selected / added an address, the three
+    // state fields below are empty and we fail fast with a single
+    // actionable message.
+    if (!defaultAddress) {
+      setError('Vui lòng thêm địa chỉ giao hàng trước khi tiếp tục');
+      return false;
+    }
     if (!fullName.trim()) {
-      setError('Vui lòng nhập họ tên người nhận');
+      setError('Địa chỉ đã chọn thiếu họ tên người nhận');
       return false;
     }
     if (!/^\d{10,11}$/.test(phone.trim())) {
@@ -56,7 +99,7 @@ export function CheckoutScreen() {
       return false;
     }
     if (address.trim().length < 10) {
-      setError('Vui lòng nhập địa chỉ chi tiết (ít nhất 10 ký tự)');
+      setError('Địa chỉ giao hàng quá ngắn, vui lòng chọn địa chỉ khác');
       return false;
     }
     setError('');
@@ -73,6 +116,20 @@ export function CheckoutScreen() {
       return;
     }
     if (checkedItems.length === 0) return;
+    // 2026-10-03 (mobile parity with FE): place-order is the only action
+    // that still requires authentication. If the user reached checkout as
+    // a guest (mirroring FE behavior) we open the Auth modal stack so
+    // they can log in / register, then come back to place the order.
+    // CartContext.placeOrder already toasts "Vui lòng đăng nhập" if the
+    // session is still missing — we additionally redirect to the Auth
+    // screen so the toast isn't the only signal.
+    if (!session?.token) {
+      const parent = navigation.getParent<
+        NativeStackNavigationProp<{ Auth: undefined }>
+      >();
+      parent?.navigate('Auth');
+      return;
+    }
     setIsSubmitting(true);
     const orderItems: OrderItem[] = checkedItems.map((item) => ({
       id: String(item.id),
@@ -148,39 +205,71 @@ export function CheckoutScreen() {
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }}>
         {step === 'address' ? (
           <View style={styles.card}>
-            <Text style={[styles.cardTitle, serif]}>Thông tin nhận hàng</Text>
+            <Text style={[styles.cardTitle, serif]}>Địa chỉ giao hàng</Text>
             {error ? (
               <View style={styles.errorBox}>
                 <Text style={styles.errorText}>⚠️ {error}</Text>
               </View>
             ) : null}
 
-            <Text style={styles.label}>Họ và tên *</Text>
-            <TextInput
-              style={styles.input}
-              value={fullName}
-              onChangeText={setFullName}
-              placeholder="Nguyễn Văn A"
-              placeholderTextColor={MUTED}
-            />
-            <Text style={styles.label}>Số điện thoại *</Text>
-            <TextInput
-              style={styles.input}
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="0987654321"
-              placeholderTextColor={MUTED}
-              keyboardType="phone-pad"
-            />
-            <Text style={styles.label}>Địa chỉ giao hàng *</Text>
-            <TextInput
-              style={[styles.input, { height: 90, textAlignVertical: 'top' }]}
-              value={address}
-              onChangeText={setAddress}
-              placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành phố..."
-              placeholderTextColor={MUTED}
-              multiline
-            />
+            {/* 2026-10-03 — Address book is the single source of truth for
+                recipient info. The legacy free-form inputs (name/phone/
+                address) are removed: when the buyer has at least one
+                saved address we render it as a read-only summary card and
+                expose a "Đổi địa chỉ" shortcut; when they have none we
+                show an empty state with an inline "Thêm" CTA that opens
+                the picker modal (which auto-jumps to the new-address
+                form when the list is empty). */}
+
+            {addresses.length > 0 && defaultAddress ? (
+              <View style={styles.addressCard}>
+                <View style={styles.addressCardHeader}>
+                  <MapPin size={16} color={T} />
+                  <Text style={styles.addressCardLabel}>Giao tới</Text>
+                  {defaultAddress.isDefault ? (
+                    <View style={styles.defaultPill}>
+                      <Text style={styles.defaultPillText}>Mặc định</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={styles.addressCardName}>
+                  {defaultAddress.name} · {defaultAddress.phone}
+                </Text>
+                <Text style={styles.addressCardBody}>
+                  {[defaultAddress.address, defaultAddress.ward, defaultAddress.province]
+                    .filter(Boolean)
+                    .join(', ')}
+                </Text>
+                <TouchableOpacity
+                  style={styles.changeBtn}
+                  onPress={() => setPickerOpen(true)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.changeBtnText}>
+                    Đổi địa chỉ ({addresses.length})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.emptyAddressCard}>
+                <MapPin size={28} color={MUTED} />
+                <Text style={styles.emptyAddressTitle}>
+                  Bạn chưa có địa chỉ giao hàng
+                </Text>
+                <Text style={styles.emptyAddressSubtitle}>
+                  Thêm địa chỉ để tiếp tục thanh toán.
+                </Text>
+                <TouchableOpacity
+                  style={styles.addAddressBtn}
+                  onPress={() => setPickerOpen(true)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.addAddressBtnText}>
+                    + Thêm địa chỉ giao hàng
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         ) : (
           <>
@@ -237,9 +326,39 @@ export function CheckoutScreen() {
 
             <View style={styles.card}>
               <Text style={[styles.cardTitle, serif]}>Giao tới</Text>
-              <Text style={styles.recipientName}>{fullName}</Text>
-              <Text style={styles.recipientInfo}>{phone}</Text>
-              <Text style={styles.recipientInfo}>{address}</Text>
+              {defaultAddress ? (
+                <View style={styles.addressCard}>
+                  <View style={styles.addressCardHeader}>
+                    <MapPin size={16} color={T} />
+                    <Text style={styles.addressCardLabel}>Địa chỉ nhận hàng</Text>
+                    {defaultAddress.isDefault ? (
+                      <View style={styles.defaultPill}>
+                        <Text style={styles.defaultPillText}>Mặc định</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={styles.addressCardName}>
+                    {fullName} · {phone}
+                  </Text>
+                  <Text style={styles.addressCardBody}>{address}</Text>
+                  <TouchableOpacity
+                    style={styles.changeBtn}
+                    onPress={() => {
+                      setStep('address');
+                      setPickerOpen(true);
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.changeBtnText}>
+                      Đổi địa chỉ ({addresses.length})
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <Text style={styles.recipientInfo}>
+                  Chưa chọn địa chỉ giao hàng.
+                </Text>
+              )}
             </View>
           </>
         )}
@@ -264,6 +383,16 @@ export function CheckoutScreen() {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* BE 2026-10-03 — Address picker modal */}
+      <AddressPickerModal
+        open={pickerOpen}
+        addresses={addresses}
+        defaultAddress={defaultAddress}
+        onClose={() => setPickerOpen(false)}
+        onSelect={onPickSaved}
+        onAddNew={addAddress}
+      />
     </SafeAreaView>
   );
 }
@@ -342,6 +471,99 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 12,
   },
+  // BE 2026-10-03 — address card styles (replaces the old free-form
+  // inputs which delegated name/phone/address to the address book).
+  addressCard: {
+    borderWidth: 2,
+    borderColor: T,
+    borderRadius: 12,
+    backgroundColor: T + '0A',
+    padding: 12,
+    gap: 6,
+  },
+  addressCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  addressCardLabel: {
+    color: T,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  defaultPill: {
+    backgroundColor: T + '22',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    marginLeft: 4,
+  },
+  defaultPillText: {
+    color: T,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  addressCardName: {
+    color: ESPRESSO,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  addressCardBody: {
+    color: COFFEE,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  changeBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: T,
+    backgroundColor: CARD,
+  },
+  changeBtnText: {
+    color: T,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  emptyAddressCard: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    borderWidth: 2,
+    borderColor: MUTED,
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    backgroundColor: SOFT,
+    gap: 6,
+  },
+  emptyAddressTitle: {
+    color: ESPRESSO,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  emptyAddressSubtitle: {
+    color: COFFEE,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  addAddressBtn: {
+    marginTop: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: T,
+  },
+  addAddressBtnText: {
+    color: LINEN,
+    fontSize: 13,
+    fontWeight: '700',
+  },
   errorBox: {
     backgroundColor: '#FDEDEC',
     borderWidth: 1,
@@ -354,23 +576,6 @@ const styles = StyleSheet.create({
     color: '#E74C3C',
     fontSize: 12,
     fontWeight: '600',
-  },
-  label: {
-    color: COFFEE,
-    fontWeight: '700',
-    fontSize: 12,
-    marginTop: 12,
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: SOFT,
-    borderWidth: 2,
-    borderColor: MUTED,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: ESPRESSO,
-    fontSize: 14,
   },
   reviewItem: {
     flexDirection: 'row',
@@ -451,11 +656,6 @@ const styles = StyleSheet.create({
     color: COFFEE,
     fontSize: 11,
     marginTop: 2,
-  },
-  recipientName: {
-    color: ESPRESSO,
-    fontWeight: '700',
-    fontSize: 14,
   },
   recipientInfo: {
     color: COFFEE,

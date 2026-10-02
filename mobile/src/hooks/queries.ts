@@ -53,12 +53,20 @@ function useQuery<T>(fetcher: () => Promise<T>, deps: unknown[] = []): QueryStat
 }
 
 // ── Products ──
-export function useProducts(params?: { status?: string; category?: string }): QueryState<Product[]> {
+// `cats` accepts multiple Vietnamese category labels — we forward them as a
+// comma-separated list to `/api/products?category=` (BE filters by exact
+// name match). If `cats` is omitted we let the backend return the full
+// active catalogue.
+export function useProducts(params?: {
+  status?: string;
+  category?: string;
+  seller?: string;
+}): QueryState<Product[]> {
   return useQuery<Product[]>(async () => {
     const res = await productApi.list(params);
     return res.products.map((p) => adaptProduct(p, new Set()));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params?.status, params?.category]);
+  }, [params?.status, params?.category, params?.seller]);
 }
 
 export function useProduct(id: string | undefined): QueryState<Product> {
@@ -86,6 +94,47 @@ export function useSeller(handle: string | undefined): QueryState<Seller> {
       if (!handle) throw new Error('Missing handle');
       const res = await sellerApi.byHandle(handle);
       return adaptSeller(res.seller);
+    },
+    [handle],
+  );
+}
+
+// Shop screen review — kept as `unknown` on the wire type but typed here
+// for safe rendering. The mobile Shop screen only reads the visible
+// fields; the backend is the source of truth.
+export interface ShopReview {
+  _id: string;
+  rating: number;
+  comment: string;
+  buyerName?: string;
+  productName?: string;
+  createdAt: string;
+}
+
+export function useShopProducts(handle: string | undefined): QueryState<Product[]> {
+  return useQuery<Product[]>(
+    async () => {
+      if (!handle) throw new Error('Missing handle');
+      const res = await sellerApi.products(handle);
+      return res.products.map((p) => adaptProduct(p, new Set()));
+    },
+    [handle],
+  );
+}
+
+export function useShopReviews(handle: string | undefined): QueryState<ShopReview[]> {
+  return useQuery<ShopReview[]>(
+    async () => {
+      if (!handle) throw new Error('Missing handle');
+      const res = await sellerApi.reviews(handle);
+      // BE returns `unknown[]` — narrow defensively so a backend shape
+      // change doesn't crash the Shop screen.
+      return (Array.isArray(res.reviews) ? res.reviews : []).filter(
+        (r): r is ShopReview =>
+          typeof r === 'object' &&
+          r !== null &&
+          typeof (r as ShopReview).rating === 'number',
+      );
     },
     [handle],
   );

@@ -20,12 +20,15 @@ import {
   ShoppingBag,
   MessageCircle,
   ChevronRight,
+  MapPin,
+  User,
 } from 'lucide-react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../../context/AuthContext';
 import { useOrders } from '../../hooks/queries';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { LetterAvatar } from '../../components/LetterAvatar';
 import { orderApi } from '../../api/endpoints';
 import { getOrderTabStatus } from '../../adapters';
 import { T, ESPRESSO, COFFEE, LINEN, MUTED, CARD, SOFT, serif, success } from '../../theme/colors';
@@ -162,7 +165,14 @@ export function AccountScreen() {
     }
   };
 
-  if (!session) return null;
+  // 2026-10-03 (mobile parity with FE): if the user isn't logged in we
+  // show a guest welcome screen with Login / Register CTAs instead of
+  // returning null. This matches FE where `/account` works for guests
+  // (shows a sign-in CTA). All order / address-book interactions still
+  // require auth — they just won't crash the screen for a guest.
+  if (!session) {
+    return <GuestAccountScreen />;
+  }
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
@@ -172,15 +182,14 @@ export function AccountScreen() {
       >
         {/* Profile header */}
         <View style={styles.profileHeader}>
-          <View style={styles.avatar}>
-            {session.avatarUrl ? (
-              <Image source={{ uri: session.avatarUrl }} style={{ width: '100%', height: '100%' }} />
-            ) : (
-              <Text style={styles.avatarText}>
-                {session.name.charAt(0).toUpperCase()}
-              </Text>
-            )}
-          </View>
+          {session.avatarUrl ? (
+            <Image source={{ uri: session.avatarUrl }} style={styles.avatarImg} />
+          ) : (
+            // BE 2026-10-03: deterministic letter avatar (FE mirrors this).
+            <View style={styles.avatar}>
+              <LetterAvatar name={session.name} size={64} />
+            </View>
+          )}
           <View style={{ flex: 1 }}>
             <Text style={[styles.name, serif]}>{session.name}</Text>
             <Text style={styles.email}>{session.email}</Text>
@@ -200,6 +209,14 @@ export function AccountScreen() {
           <TouchableOpacity style={styles.quickLink} activeOpacity={0.85}>
             <MessageCircle size={20} color={T} />
             <Text style={styles.quickLinkText}>Tin nhắn</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickLink}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('AddressBook')}
+          >
+            <MapPin size={20} color={T} />
+            <Text style={styles.quickLinkText}>Sổ địa chỉ</Text>
           </TouchableOpacity>
         </View>
 
@@ -313,6 +330,53 @@ export function AccountScreen() {
         onConfirm={confirmCancel}
         onCancel={cancelCancel}
       />
+    </SafeAreaView>
+  );
+}
+
+/**
+ * GuestAccountScreen — shown on the Account tab when there's no session.
+ * Mirrors the FE guest `/account` page which just offers a sign-in CTA.
+ * Reached via the Account tab in the bottom bar (no auth gate), so the
+ * Marketplace tab is still browseable for guests (FE parity).
+ */
+function GuestAccountScreen() {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<AccountStackParamList>>();
+  const openAuth = () => {
+    // `Auth` is a sibling of `Main` on the RootStack — walk up two levels.
+    const root = navigation.getParent();
+    root?.navigate('Auth' as never);
+  };
+  return (
+    <SafeAreaView edges={['top']} style={styles.container}>
+      <ScrollView contentContainerStyle={styles.guestContainer}>
+        <View style={styles.guestAvatarWrap}>
+          <User size={56} color={COFFEE} />
+        </View>
+        <Text style={[styles.guestTitle, serif]}>Chào bạn!</Text>
+        <Text style={styles.guestSubtitle}>
+          Đăng nhập để xem đơn hàng, sổ địa chỉ và đánh giá sản phẩm.
+        </Text>
+        <TouchableOpacity
+          style={styles.guestPrimaryBtn}
+          onPress={openAuth}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.guestPrimaryBtnText}>Đăng nhập</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.guestSecondaryBtn}
+          onPress={openAuth}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.guestSecondaryBtnText}>Tạo tài khoản mới</Text>
+        </TouchableOpacity>
+        <Text style={styles.guestHint}>
+          Bạn vẫn có thể duyệt sản phẩm, tìm kiếm và thêm vào giỏ hàng
+          mà không cần đăng nhập.
+        </Text>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -487,15 +551,21 @@ const styles = StyleSheet.create({
     backgroundColor: ESPRESSO,
   },
   avatar: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    borderWidth: 3,
+    borderColor: T,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImg: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: COFFEE,
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 3,
     borderColor: T,
-    overflow: 'hidden',
   },
   avatarText: {
     color: LINEN,
@@ -717,5 +787,74 @@ const styles = StyleSheet.create({
     color: T,
     fontWeight: '700',
     fontSize: 12,
+  },
+  // ── Guest AccountScreen styles ────────────────────────────────────────
+  guestContainer: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 64,
+  },
+  guestAvatarWrap: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: CARD,
+    borderWidth: 2,
+    borderColor: MUTED,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  guestTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: ESPRESSO,
+    marginBottom: 8,
+  },
+  guestSubtitle: {
+    color: COFFEE,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 24,
+  },
+  guestPrimaryBtn: {
+    backgroundColor: T,
+    paddingHorizontal: 32,
+    paddingVertical: 13,
+    borderRadius: 12,
+    marginBottom: 10,
+    minWidth: 220,
+    alignItems: 'center',
+  },
+  guestPrimaryBtnText: {
+    color: LINEN,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  guestSecondaryBtn: {
+    backgroundColor: CARD,
+    borderWidth: 1.5,
+    borderColor: T,
+    paddingHorizontal: 32,
+    paddingVertical: 13,
+    borderRadius: 12,
+    minWidth: 220,
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  guestSecondaryBtnText: {
+    color: T,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  guestHint: {
+    color: COFFEE,
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+    fontStyle: 'italic',
   },
 });

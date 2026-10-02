@@ -17,6 +17,7 @@ import {
   OrderItem,
   Notification,
   OrderStatus,
+  Address,
 } from '../types';
 import { hashId, timeAgo } from '../utils/format';
 
@@ -42,6 +43,11 @@ export function adaptProduct(p: ApiProduct, likedIds: Set<string>): Product {
 
 // ── Seller ──
 export function adaptSeller(s: ApiSeller): Seller {
+  // BE 2026-10-03: forward `description`, `joinedAt`, `responseRate`,
+  // `followers` from the backend payload so the Shop screen has enough
+  // information to build a proper profile. Older API versions omit these
+  // fields — we fall back to undefined which the Shop screen treats as
+  // "unknown".
   return {
     id: hashId(s._id),
     handle: s.handle,
@@ -50,6 +56,10 @@ export function adaptSeller(s: ApiSeller): Seller {
     rating: s.rating,
     transactions: s.totalTransactions,
     thumbs: s.coverImages ?? [],
+    description: s.description,
+    joinedAt: s.joinedAt,
+    responseRate: s.responseRate,
+    followers: s.followers,
   };
 }
 
@@ -148,12 +158,67 @@ export function adaptOrder(o: ApiOrder): Order {
     shippingName: o.shippingName,
     shippingPhone: o.shippingPhone,
     shippingAddress: o.shippingAddress,
+    // BE 2026-10-03: pass-through province/commune names from the address
+    // snapshot. UI surfaces these in OrderDetail so the historical record
+    // is stable even when CAS data is updated later.
+    shippingProvinceName: o.shippingProvinceName,
+    shippingCommuneName: o.shippingCommuneName,
     trackingNumber: o.trackingNumber,
     shippingProvider: o.shippingProvider,
     paidAt: o.paidAt,
     cancelReason: o.cancelReason,
     cancelRequestedAt: o.cancelRequestedAt,
   };
+}
+
+// ── Address (BE 2026-10-03) ──
+// Mirrors FE `adaptAddress(api, type)`. Maps the BE address payload into the
+// canonical 2-level mobile `Address` shape (province + ward). `district` is
+// kept as an alias of `ward` for older responses so callers can rely on
+// either field. `isDefault` is coerced to a real boolean (BE may return
+// `undefined`).
+export function adaptAddress(a: {
+  id?: string;
+  _id?: string;
+  label?: string;
+  name: string;
+  phone: string;
+  address: string;
+  province?: string;
+  provinceId?: string;
+  ward?: string;
+  wardId?: string;
+  district?: string;
+  isDefault?: boolean;
+  effectiveDate?: string;
+}): Address {
+  const ward = a.ward || a.district || '';
+  const province = a.province || '';
+  return {
+    id: a.id || a._id || '',
+    label: a.label,
+    name: a.name,
+    phone: a.phone,
+    address: a.address,
+    province,
+    provinceId: a.provinceId,
+    ward,
+    wardId: a.wardId,
+    district: a.district || ward,
+    isDefault: Boolean(a.isDefault),
+    effectiveDate: a.effectiveDate,
+  };
+}
+
+/**
+ * Concatenate the address fields into a single one-line string. Mirrors FE
+ * `buildShippingAddressString(addr)`. Used by OrderDetail and Checkout as
+ * a stable display format. `effectiveDate` (if present) is intentionally
+ * excluded — that's metadata, not part of the human-readable address.
+ */
+export function buildShippingAddressString(a: Address | null | undefined): string {
+  if (!a) return '';
+  return [a.address, a.ward, a.province].filter(Boolean).join(', ');
 }
 
 // ── Notification ──

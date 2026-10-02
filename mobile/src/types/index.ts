@@ -37,6 +37,14 @@ export interface Seller {
   rating: number;
   transactions: number;
   thumbs: string[];
+  /** Optional bio / shop description — shown on the Shop screen. */
+  description?: string;
+  /** Optional social proof surfaced on the Shop screen (e.g. joined year,
+   *  response rate). All fields are optional so legacy callers (homepage
+   *  horizontal carousel) don't have to provide them. */
+  joinedAt?: string;
+  responseRate?: number;
+  followers?: number;
 }
 
 // ── Cart ───────────────────────────────────────────────────────────────────────
@@ -57,6 +65,27 @@ export interface CartItem {
 export interface CartGroup {
   seller: string;
   items: CartItem[];
+}
+
+// ── Address (2-level post-merger; mirrors FE `frontend/src/types/index.ts`) ─
+// `province` + `ward` is the canonical shape after Vietnam's 2025 admin
+// merger. `district` is kept as a backward-compat alias for older API
+// responses. BE 2026-10-03.
+export interface Address {
+  id: string;
+  label?: string;
+  name: string;
+  phone: string;
+  address: string;
+  province: string;
+  provinceId?: string;
+  ward: string;
+  wardId?: string;
+  /** @deprecated alias for `ward`. */
+  district?: string;
+  isDefault: boolean;
+  /** Effective date used when this address was resolved from CAS. */
+  effectiveDate?: string;
 }
 
 // ── Order ──────────────────────────────────────────────────────────────────────
@@ -101,6 +130,11 @@ export interface Order {
   shippingName?: string;
   shippingPhone?: string;
   shippingAddress?: string;
+  /** Address snapshot (BE 2026-10-03) — province/commune names captured at
+   * order time so the historical record does not change when CAS data is
+   * updated. */
+  shippingProvinceName?: string;
+  shippingCommuneName?: string;
   /** Reason buyer provided when requesting cancel. */
   cancelReason?: string;
   /** When buyer requested the cancel (ISO string). */

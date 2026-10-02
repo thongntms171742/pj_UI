@@ -14,7 +14,6 @@ import { ShoppingCart, Trash2 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCart } from '../../context/CartContext';
-import { useAuth } from '../../context/AuthContext';
 import { BrandCheckbox } from '../../components/BrandCheckbox';
 import { QuantityStepper } from '../../components/QuantityStepper';
 import { EmptyCartState } from '../../components/EmptyCartState';
@@ -26,7 +25,6 @@ type Nav = NativeStackNavigationProp<CartStackParamList, 'CartMain'>;
 
 export function CartScreen() {
   const navigation = useNavigation<Nav>();
-  const { session } = useAuth();
   const {
     cartGroups,
     loading,
@@ -54,18 +52,12 @@ export function CartScreen() {
   const total = subtotal + ship;
 
   const handleCheckout = () => {
-    if (!session) {
-      Alert.alert(
-        'Yêu cầu đăng nhập',
-        'Bạn cần đăng nhập để đặt hàng.',
-        [
-          { text: 'Hủy', style: 'cancel' },
-          { text: 'Đăng nhập', onPress: () => navigation.navigate('Checkout') },
-        ],
-      );
-      return;
-    }
     if (checkedItems.length === 0) return;
+    // 2026-10-03 (mobile parity with FE): browsing the cart and tapping
+    // "Mua hàng" no longer requires an active session. The actual
+    // authentication gate happens in `CheckoutScreen.onPlaceOrder`, which
+    // opens the Auth modal if the user isn't logged in. This mirrors
+    // web FE where you can browse and configure a cart as a guest.
     navigation.navigate('Checkout');
   };
 

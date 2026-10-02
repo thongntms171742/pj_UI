@@ -45,7 +45,7 @@ function GlobalToast() {
 }
 
 export function RootNavigator() {
-  const { session, loading } = useAuth();
+  const { loading } = useAuth();
 
   if (loading) {
     return (
@@ -55,15 +55,21 @@ export function RootNavigator() {
     );
   }
 
+  // 2026-10-03 (mobile parity with FE): browsing the marketplace
+  // (Home/Search/ProductDetail/Cart/Account) no longer requires the user to
+  // be logged in. The `Auth` stack is still registered as a screen so we
+  // can deep-link into Login/Register when a buyer action needs an
+  // identity (place order, view orders, address book CRUD).
   return (
     <SafeAreaProvider>
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-          {session?.token ? (
-            <Stack.Screen name="Main" component={MainTabNavigator} />
-          ) : (
-            <Stack.Screen name="Auth" component={AuthNavigator} />
-          )}
+          <Stack.Screen name="Main" component={MainTabNavigator} />
+          <Stack.Screen
+            name="Auth"
+            component={AuthNavigator}
+            options={{ presentation: 'modal' }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
       <GlobalToast />
