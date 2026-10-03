@@ -284,3 +284,16 @@ The project follows a strict API contract model between the Frontend and Backend
 - ✅ `cd backend && npm test` — **38/38 PASS**.
 - ✅ `cd frontend && npm run build` (vite) — passes. Bundle: 448.46 kB JS / 121.80 kB CSS.
 - ⚠️ Live integration with `/api/users/me/addresses` not verified (no MongoDB live connection in this session).
+
+## Project Management Toolkit (2026-10-03)
+
+Created comprehensive task/timeline tracking system under `docs/`:
+
+- **`docs/TASK_TRACKER.md`** (~15 KB): Full task breakdown by module + sprint, status dashboard, KPI table, weekly report, risk register, Definition of Done. 47 tasks tracked across FE/BE/DB/DOC/QA/BUG/CLEAN modules.
+- **`docs/TIMELINE.md`** (~16 KB): Gantt chart ASCII art for Sprint 7 + Sprint 8, dependency graph, milestone timeline, quarterly OKRs, velocity trend, critical path to production.
+- **`docs/WORK_TRACKING_GUIDE.md`** (~13 KB): Detailed user manual for the tracking system — task ID conventions, status/priority legend, daily standup workflow, sprint review checklist, FAQ.
+- **`docs/generate_tracker.py`** (~42 KB, 700 lines): Python script generating 2 outputs:
+  - **`docs/tracker.xlsx`** (21 KB, 6 sheets): Dashboard (KPIs), All Tasks (47 rows), Gantt (76-day timeline), Risks (5 rows), Team Workload (6 owners), Milestones (10 rows).
+  - **`docs/tracker.html`** (41 KB): Interactive Kanban board with filter (priority/owner/module/search), responsive grid layout, progress bar. Vanilla JS — no dependencies, runs offline.
+- Run with: `cd docs && python generate_tracker.py` (deps: `openpyxl`).
+- Source of truth: `TASK_TRACKER.md` (Markdown). Excel/HTML are auto-regenerated artifacts. Add `tracker.xlsx` and `tracker.html` to `.gitignore`.

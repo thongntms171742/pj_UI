@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>thrift it! — Task Tracker</title>
+<style>
+  :root {
+    --espresso: #3A2312;
+    --coffee: #6F4E37;
+    --linen: #FAF0E6;
+    --terracotta: #D27D2D;
+    --muted: #E8D5BC;
+    --soft: #F7ECE0;
+    --green: #27AE60;
+    --red: #E74C3C;
+    --blue: #2980B9;
+    --gray: #95A5A6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--linen);
+    color: var(--espresso);
+    padding: 20px;
+  }
+  .header {
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .header h1 {
+    color: var(--espresso);
+    font-size: 28px;
+    margin-bottom: 8px;
+  }
+  .header .subtitle { color: var(--gray); font-size: 14px; margin-bottom: 16px; }
+  .progress {
+    background: var(--muted);
+    border-radius: 8px;
+    height: 24px;
+    overflow: hidden;
+    position: relative;
+  }
+  .progress-bar {
+    background: linear-gradient(90deg, var(--green), var(--terracotta));
+    height: 100%;
+    transition: width 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    font-size: 12px;
+  }
+  .filters {
+    background: white;
+    padding: 16px;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .filters label { font-weight: 600; color: var(--coffee); margin-right: 6px; }
+  .filters select, .filters input {
+    padding: 6px 12px;
+    border: 1px solid var(--muted);
+    border-radius: 6px;
+    background: var(--soft);
+    font-size: 14px;
+  }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+  }
+  .column {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    min-height: 400px;
+  }
+  .column-header {
+    color: white;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .column-header h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
+  .column-header .count {
+    background: rgba(255,255,255,0.3);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+  }
+  .column-body {
+    padding: 12px;
+    max-height: calc(100vh - 280px);
+    overflow-y: auto;
+  }
+  .card {
+    background: var(--soft);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+    border-left: 4px solid var(--terracotta);
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .card-id { font-family: monospace; font-weight: bold; color: var(--coffee); font-size: 12px; }
+  .priority-badge {
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: bold;
+  }
+  .card-title { font-weight: 600; margin-bottom: 8px; font-size: 14px; line-height: 1.3; }
+  .card-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--gray);
+    margin-bottom: 6px;
+  }
+  .module-tag {
+    background: var(--muted);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+  }
+  .card-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--gray);
+    border-top: 1px solid var(--muted);
+    padding-top: 6px;
+  }
+  .card-footer .sprint {
+    background: var(--coffee);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  @media (max-width: 1200px) {
+    .board { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 768px) {
+    .board { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>📋 thrift it! — Task Tracker</h1>
+    <div class="subtitle">Vintage Clothing Marketplace — Task & Timeline Tracker • Last updated: 2026-10-03</div>
+    <div class="progress">
+      <div class="progress-bar" style="width: 55.3%">55.3% Complete (26/47)</div>
+    </div>
+  </div>
+
+  <div class="filters">
+    <div><label>Priority:</label><select id="filter-priority">
+      <option value="">All</option>
+      <option value="P0">P0</option>
+      <option value="P1">P1</option>
+      <option value="P2">P2</option>
+      <option value="P3">P3</option>
+    </select></div>
+    <div><label>Owner:</label><select id="filter-owner">
+      <option value="">All</option>
+      <option value="@frontend-lead">@frontend-lead</option>
+      <option value="@frontend-dev">@frontend-dev</option>
+      <option value="@backend-lead">@backend-lead</option>
+      <option value="@backend-dev">@backend-dev</option>
+      <option value="@qa">@qa</option>
+      <option value="@doc-team">@doc-team</option>
+    </select></div>
+    <div><label>Module:</label><select id="filter-module">
+      <option value="">All</option>
+      <option value="FE">FE</option>
+      <option value="BE">BE</option>
+      <option value="DB">DB</option>
+      <option value="QA">QA</option>
+      <option value="DOC">DOC</option>
+      <option value="BUG">BUG</option>
+      <option value="CLEAN">CLEAN</option>
+    </select></div>
+    <div><label>Search:</label><input type="text" id="filter-search" placeholder="ID or title..."></div>
+  </div>
+
+  <div class="board">
+    
+        <div class="column" data-status="Done">
+          <div class="column-header" style="background: #27AE60">
+            <h2>Done</h2>
+            <span class="count">26</span>
+          </div>
+          <div class="column-body">
+            
+        <div class="card" data-id="FE-101" data-priority="P0" data-owner="@frontend-lead" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-101</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">AddressBook component + useAddressCatalog hook</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">@frontend-lead</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">8h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-102" data-priority="P0" data-owner="@frontend-dev" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-102</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">CAS API — 2-tier administrative hierarchy</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">@frontend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">6h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-103" data-priority="P0" data-owner="@frontend-dev" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-103</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">PaymentScreen auto-fill từ AddressBook</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">@frontend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">4h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-104" data-priority="P0" data-owner="@frontend-dev" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-104</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">AddressBookTab (Buyer) — CRUD đầy đủ</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">@frontend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">5h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-105" data-priority="P0" data-owner="@frontend-dev" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-105</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">WarehouseTab (Seller) — pickup address</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">@frontend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">5h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-106" data-priority="P1" data-owner="@frontend-dev" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-106</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">LetterAvatar + PlaceholderImage thay Unsplash</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">@frontend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">3h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-107" data-priority="P1" data-owner="@frontend-dev" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-107</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">Auto-fill pickup từ warehouse trong shipment dialog</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">@frontend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">2h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-108" data-priority="P2" data-owner="@frontend-dev" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-108</span>
+            <span class="priority-badge" style="background: #2980B9">P2</span>
+          </div>
+          <div class="card-title">Xóa legacy placeholder Quận/Huyện</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">@frontend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">1h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-109" data-priority="P1" data-owner="@frontend-dev" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-109</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">Loading & error states cho AddressBook</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">@frontend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">2h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BE-201" data-priority="P0" data-owner="@backend-lead" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-201</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">addressService.ts — proxy CAS Address Kit</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">@backend-lead</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">6h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BE-202" data-priority="P0" data-owner="@backend-dev" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-202</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">addressController + routes</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">3h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BE-203" data-priority="P0" data-owner="@backend-dev" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-203</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">Snapshot địa chỉ vào Order</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">4h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BE-204" data-priority="P1" data-owner="@backend-dev" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-204</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">test:address (16/16 PASS)</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">3h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BE-205" data-priority="P1" data-owner="@backend-dev" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-205</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">5s timeout cho CAS requests (AbortController)</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">1h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BE-206" data-priority="P2" data-owner="@backend-dev" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-206</span>
+            <span class="priority-badge" style="background: #2980B9">P2</span>
+          </div>
+          <div class="card-title">Validate effectiveDate (latest|YYYY-MM-DD)</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">1h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="DB-301" data-priority="P0" data-owner="@backend-lead" data-module="DB">
+          <div class="card-header">
+            <span class="card-id">DB-301</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">Migration: address snapshot fields vào Order</div>
+          <div class="card-meta">
+            <span class="module-tag">DB</span>
+            <span class="owner">@backend-lead</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">3h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="DB-302" data-priority="P0" data-owner="@backend-dev" data-module="DB">
+          <div class="card-header">
+            <span class="card-id">DB-302</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">Update mapOrder adapter</div>
+          <div class="card-meta">
+            <span class="module-tag">DB</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">2h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="QA-401" data-priority="P0" data-owner="@qa" data-module="QA">
+          <div class="card-header">
+            <span class="card-id">QA-401</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">Backend build pass (npm run build)</div>
+          <div class="card-meta">
+            <span class="module-tag">QA</span>
+            <span class="owner">@qa</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">0.5h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="QA-402" data-priority="P0" data-owner="@qa" data-module="QA">
+          <div class="card-header">
+            <span class="card-id">QA-402</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">Backend tests pass (errorContract)</div>
+          <div class="card-meta">
+            <span class="module-tag">QA</span>
+            <span class="owner">@qa</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">0.5h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="QA-403" data-priority="P0" data-owner="@qa" data-module="QA">
+          <div class="card-header">
+            <span class="card-id">QA-403</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">Frontend build pass (vite)</div>
+          <div class="card-meta">
+            <span class="module-tag">QA</span>
+            <span class="owner">@qa</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">0.5h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="DOC-501" data-priority="P0" data-owner="@frontend-lead" data-module="DOC">
+          <div class="card-header">
+            <span class="card-id">DOC-501</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">Update AI_CONTEXT.md</div>
+          <div class="card-meta">
+            <span class="module-tag">DOC</span>
+            <span class="owner">@frontend-lead</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">1h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="DOC-502" data-priority="P1" data-owner="@doc-team" data-module="DOC">
+          <div class="card-header">
+            <span class="card-id">DOC-502</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">USER_MANUAL.md (1083 dòng)</div>
+          <div class="card-meta">
+            <span class="module-tag">DOC</span>
+            <span class="owner">@doc-team</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">3h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="DOC-503" data-priority="P2" data-owner="@doc-team" data-module="DOC">
+          <div class="card-header">
+            <span class="card-id">DOC-503</span>
+            <span class="priority-badge" style="background: #2980B9">P2</span>
+          </div>
+          <div class="card-title">Slides .pptx (28 slides)</div>
+          <div class="card-meta">
+            <span class="module-tag">DOC</span>
+            <span class="owner">@doc-team</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">2h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BUG-001" data-priority="P0" data-owner="@backend-lead" data-module="BUG">
+          <div class="card-header">
+            <span class="card-id">BUG-001</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">ORDER_BUYER_NOT_PARTICIPANT — buyer không transition DELIVERED</div>
+          <div class="card-meta">
+            <span class="module-tag">BUG</span>
+            <span class="owner">@backend-lead</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S6</span>
+            <span class="effort">1h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BUG-002" data-priority="P0" data-owner="@backend-dev" data-module="BUG">
+          <div class="card-header">
+            <span class="card-id">BUG-002</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">Avatar chỉ update seller, không sync User</div>
+          <div class="card-meta">
+            <span class="module-tag">BUG</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S6</span>
+            <span class="effort">1h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BUG-003" data-priority="P1" data-owner="@backend-dev" data-module="BUG">
+          <div class="card-header">
+            <span class="card-id">BUG-003</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">Seller không set DELIVERING/DELIVERED trực tiếp</div>
+          <div class="card-meta">
+            <span class="module-tag">BUG</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S6</span>
+            <span class="effort">0.5h</span>
+          </div>
+        </div>
+        
+          </div>
+        </div>
+        
+        <div class="column" data-status="In Progress">
+          <div class="column-header" style="background: #2980B9">
+            <h2>In Progress</h2>
+            <span class="count">1</span>
+          </div>
+          <div class="column-body">
+            
+        <div class="card" data-id="BE-301" data-priority="P0" data-owner="@backend-lead" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-301</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">Ledger.ts — double-entry accounting model</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">@backend-lead</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">12h</span>
+          </div>
+        </div>
+        
+          </div>
+        </div>
+        
+        <div class="column" data-status="To Do">
+          <div class="column-header" style="background: #D27D2D">
+            <h2>To Do</h2>
+            <span class="count">11</span>
+          </div>
+          <div class="column-body">
+            
+        <div class="card" data-id="QA-404" data-priority="P0" data-owner="@qa" data-module="QA">
+          <div class="card-header">
+            <span class="card-id">QA-404</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">Live test /api/users/me/addresses</div>
+          <div class="card-meta">
+            <span class="module-tag">QA</span>
+            <span class="owner">@qa</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S7</span>
+            <span class="effort">2h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BE-302" data-priority="P0" data-owner="@backend-lead" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-302</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">PlatformFeeConfig.ts — flexible commission rates</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">@backend-lead</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">8h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BE-303" data-priority="P0" data-owner="@backend-dev" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-303</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">Refactor getAdminStats dùng Ledger</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">6h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BE-304" data-priority="P0" data-owner="@backend-dev" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-304</span>
+            <span class="priority-badge" style="background: #E74C3C">P0</span>
+          </div>
+          <div class="card-title">Migration: backfill Ledger cho orders COMPLETED</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">6h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BE-305" data-priority="P1" data-owner="@backend-dev" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-305</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">Admin endpoint cập nhật rate (audit trail)</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">4h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="CLEAN-401" data-priority="P2" data-owner="@backend-dev" data-module="CLEAN">
+          <div class="card-header">
+            <span class="card-id">CLEAN-401</span>
+            <span class="priority-badge" style="background: #2980B9">P2</span>
+          </div>
+          <div class="card-title">Xóa /api/auth/cart/merge (deprecated)</div>
+          <div class="card-meta">
+            <span class="module-tag">CLEAN</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">1h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="CLEAN-402" data-priority="P2" data-owner="@backend-dev" data-module="CLEAN">
+          <div class="card-header">
+            <span class="card-id">CLEAN-402</span>
+            <span class="priority-badge" style="background: #2980B9">P2</span>
+          </div>
+          <div class="card-title">Xóa legacy /api/admin/users/:id/{approve,reject}-seller</div>
+          <div class="card-meta">
+            <span class="module-tag">CLEAN</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">1h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="CLEAN-403" data-priority="P3" data-owner="@frontend-dev" data-module="CLEAN">
+          <div class="card-header">
+            <span class="card-id">CLEAN-403</span>
+            <span class="priority-badge" style="background: #95A5A6">P3</span>
+          </div>
+          <div class="card-title">Cleanup Unsplash fallbacks toàn bộ FE</div>
+          <div class="card-meta">
+            <span class="module-tag">CLEAN</span>
+            <span class="owner">@frontend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">4h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-301" data-priority="P1" data-owner="@frontend-dev" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-301</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">UI thanh toán online (card / ví điện tử)</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">@frontend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">12h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-302" data-priority="P1" data-owner="@frontend-dev" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-302</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">Stripe / VNPay integration</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">@frontend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">16h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-303" data-priority="P2" data-owner="@frontend-dev" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-303</span>
+            <span class="priority-badge" style="background: #2980B9">P2</span>
+          </div>
+          <div class="card-title">Hiển thị platform fee cho seller khi đặt giá</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">@frontend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">4h</span>
+          </div>
+        </div>
+        
+          </div>
+        </div>
+        
+        <div class="column" data-status="Blocked">
+          <div class="column-header" style="background: #E74C3C">
+            <h2>Blocked</h2>
+            <span class="count">1</span>
+          </div>
+          <div class="column-body">
+            
+        <div class="card" data-id="QA-501" data-priority="P1" data-owner="@qa" data-module="QA">
+          <div class="card-header">
+            <span class="card-id">QA-501</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">E2E test toàn flow mua hàng (Playwright)</div>
+          <div class="card-meta">
+            <span class="module-tag">QA</span>
+            <span class="owner">@qa</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">16h</span>
+          </div>
+        </div>
+        
+          </div>
+        </div>
+        
+        <div class="column" data-status="Backlog">
+          <div class="column-header" style="background: #95A5A6">
+            <h2>Backlog</h2>
+            <span class="count">8</span>
+          </div>
+          <div class="column-body">
+            
+        <div class="card" data-id="DB-303" data-priority="P3" data-owner="@backend-dev" data-module="DB">
+          <div class="card-header">
+            <span class="card-id">DB-303</span>
+            <span class="priority-badge" style="background: #95A5A6">P3</span>
+          </div>
+          <div class="card-title">Backfill address snapshots cho orders cũ</div>
+          <div class="card-meta">
+            <span class="module-tag">DB</span>
+            <span class="owner">@backend-dev</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">S8</span>
+            <span class="effort">4h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-X01" data-priority="P1" data-owner="TBD" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-X01</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">Chat Buyer ↔ Seller real-time (WebSocket)</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">TBD</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">Q4</span>
+            <span class="effort">40h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-X02" data-priority="P2" data-owner="TBD" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-X02</span>
+            <span class="priority-badge" style="background: #2980B9">P2</span>
+          </div>
+          <div class="card-title">Đánh giá nâng cao (ảnh review, reply)</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">TBD</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">Q4</span>
+            <span class="effort">24h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="FE-X03" data-priority="P2" data-owner="TBD" data-module="FE">
+          <div class="card-header">
+            <span class="card-id">FE-X03</span>
+            <span class="priority-badge" style="background: #2980B9">P2</span>
+          </div>
+          <div class="card-title">Wishlist / Favorites page riêng</div>
+          <div class="card-meta">
+            <span class="module-tag">FE</span>
+            <span class="owner">TBD</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">Q4</span>
+            <span class="effort">8h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BE-X01" data-priority="P2" data-owner="TBD" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-X01</span>
+            <span class="priority-badge" style="background: #2980B9">P2</span>
+          </div>
+          <div class="card-title">Seller analytics dashboard</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">TBD</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">Q4</span>
+            <span class="effort">16h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="BE-X02" data-priority="P3" data-owner="TBD" data-module="BE">
+          <div class="card-header">
+            <span class="card-id">BE-X02</span>
+            <span class="priority-badge" style="background: #95A5A6">P3</span>
+          </div>
+          <div class="card-title">Recommendation engine (collaborative filtering)</div>
+          <div class="card-meta">
+            <span class="module-tag">BE</span>
+            <span class="owner">TBD</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">Q4</span>
+            <span class="effort">40h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="INFRA-X01" data-priority="P1" data-owner="@devops" data-module="INFRA">
+          <div class="card-header">
+            <span class="card-id">INFRA-X01</span>
+            <span class="priority-badge" style="background: #D27D2D">P1</span>
+          </div>
+          <div class="card-title">CI/CD pipeline (GitHub Actions)</div>
+          <div class="card-meta">
+            <span class="module-tag">INFRA</span>
+            <span class="owner">@devops</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">Q4</span>
+            <span class="effort">12h</span>
+          </div>
+        </div>
+        
+
+        <div class="card" data-id="INFRA-X02" data-priority="P2" data-owner="@devops" data-module="INFRA">
+          <div class="card-header">
+            <span class="card-id">INFRA-X02</span>
+            <span class="priority-badge" style="background: #2980B9">P2</span>
+          </div>
+          <div class="card-title">Monitoring & alerts (Sentry, UptimeRobot)</div>
+          <div class="card-meta">
+            <span class="module-tag">INFRA</span>
+            <span class="owner">@devops</span>
+          </div>
+          <div class="card-footer">
+            <span class="sprint">Q4</span>
+            <span class="effort">8h</span>
+          </div>
+        </div>
+        
+          </div>
+        </div>
+        
+  </div>
+
+  <script>
+    const filters = {
+      priority: document.getElementById('filter-priority'),
+      owner: document.getElementById('filter-owner'),
+      module: document.getElementById('filter-module'),
+      search: document.getElementById('filter-search'),
+    };
+
+    function applyFilters() {
+      const p = filters.priority.value;
+      const o = filters.owner.value;
+      const m = filters.module.value;
+      const s = filters.search.value.toLowerCase();
+      document.querySelectorAll('.card').forEach(card => {
+        let show = true;
+        if (p && card.dataset.priority !== p) show = false;
+        if (o && card.dataset.owner !== o) show = false;
+        if (m && card.dataset.module !== m) show = false;
+        if (s && !card.dataset.id.toLowerCase().includes(s)
+              && !card.querySelector('.card-title').textContent.toLowerCase().includes(s)) show = false;
+        card.style.display = show ? 'block' : 'none';
+      });
+    }
+
+    Object.values(filters).forEach(el => el.addEventListener('input', applyFilters));
+  </script>
+</body>
+</html>

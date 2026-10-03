@@ -577,9 +577,7 @@ export default function App() {
     if (s === "admin") {
       const isAllowedAdmin =
         currentRoles.includes("admin") ||
-        session?.roles?.includes("admin") ||
-        currentEmail === "admin@thriftit.vn" ||
-        session?.email === "admin@thriftit.vn";
+        session?.roles?.includes("admin");
       if (!isAllowedAdmin) {
         showToast("⚠️ Bạn không có quyền truy cập trang quản trị Admin");
         return;
